@@ -1,5 +1,6 @@
 import { createParticles, scatter, assignHomes, POOL_SIZE } from './sim/particles.js';
 import { relax } from './sim/physics.js';
+import { createMotion, updateMotion } from './sim/motion.js';
 import { sampleScene } from './shapes/sampler.js';
 import { defaultScene } from './scenes/schema.js';
 import { createRenderer } from './render/renderer.js';
@@ -11,6 +12,7 @@ const scene = structuredClone(defaultScene);
 const particles = createParticles(POOL_SIZE);
 const renderer = createRenderer(canvas, particles);
 const stats = { count: 0, sampleMs: 0, fps: 0 };
+const motion = createMotion(scene.seed);
 
 let width = window.innerWidth;
 let height = window.innerHeight;
@@ -57,6 +59,7 @@ function frame(now) {
     resample();
   }
 
+  updateMotion(motion, particles, scene.motion, scene.seed, dt);
   relax(particles, dt);
   renderer.render();
 

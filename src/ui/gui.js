@@ -42,6 +42,19 @@ export function createGui(scene, stats, { onResample, onPalette, onBackground })
   fRadius.add(scene.radius, 'gap', 0, 6, 0.1).name('מרווח').onChange(onResample);
   fRadius.add(scene.radius, 'noiseScale', 0.001, 0.03, 0.0005).name('סקאלת noise').onChange(onResample);
 
+  const m = scene.motion;
+  const fMotion = gui.addFolder('תנועה');
+  fMotion.add(m, 'speed', 0, 4, 0.01).name('מהירות כללית');
+  const fPulse = fMotion.addFolder('פעימה');
+  fPulse.add(m.pulse, 'amount', 0, 50, 0.5).name('עוצמה %');
+  fPulse.add(m.pulse, 'speed', 0, 4, 0.01).name('מהירות');
+  const fWander = fMotion.addFolder('נדידה');
+  fWander.add(m.wander, 'range', 0, 40, 0.1).name('טווח px');
+  fWander.add(m.wander, 'speed', 0, 3, 0.01).name('מהירות');
+  const fCoh = fMotion.addFolder('קוהרנטיות');
+  fCoh.add(m, 'coherence', 0, 1, 0.01).name('קוהרנטיות');
+  fCoh.add(m, 'fieldScale', 0.0005, 0.03, 0.0005).name('סקאלת שדה');
+
   const fPalette = gui.addFolder('ספקטרום');
   fPalette.add(scene.palette, 'mapBy', mapByModes).name('מיפוי לפי').onChange(onResample);
   fPalette.addColor(scene.render, 'background').name('רקע').onChange(onBackground);

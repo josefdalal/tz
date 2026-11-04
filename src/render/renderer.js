@@ -64,7 +64,7 @@ export function createRenderer(canvas, particles) {
   const attrs = {
     aX: dyn(particles.x),
     aY: dyn(particles.y),
-    aR: dyn(particles.r),
+    aR: dyn(particles.drawR),
     aColorT: dyn(particles.colorT),
   };
   for (const [name, a] of Object.entries(attrs)) geometry.setAttribute(name, a);

@@ -16,6 +16,12 @@ export function createParticles(capacity = POOL_SIZE) {
     targetR: f(),
     colorT: f(),
     phase: f(),
+    // תנועה פנימית (motion.js): היסט מנקודת הבית ומכפיל פעימה
+    offX: f(),
+    offY: f(),
+    pulse: new Float32Array(capacity).fill(1),
+    // הרדיוס שמצויר בפועל: r * pulse
+    drawR: f(),
   };
 }
 
