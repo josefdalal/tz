@@ -1,20 +1,23 @@
-// SVG path אל נקודות בית ברדיוס משתנה, בלי חפיפות.
+// צורה אל נקודות בית ברדיוס משתנה, בלי חפיפות.
 //
-// 1. ה path מצויר כ Path2D למסכה (קנבס דו ממדי מחוץ למסך).
-// 2. מהמסכה מחושבת מפת מרחק לשוליים (Euclidean distance transform).
-//    מפת המרחק משמשת גם לבדיקת "בפנים" וגם ל sizeMode=edgeDistance,
-//    וגם מבטיחה שכל עיגול נשאר כולו בתוך הצורה.
-// 3. Poisson disk ברדיוס משתנה: זריקת חצים עם רשת מרחבית, במעברים מהגדול לקטן.
+// 1. המקור (SVG path כ Path2D, או קובץ SVG/ביטמפ כתמונה) מצויר למסכה דרך מטריצת טרנספורמציה
+//    אחת: מיקום יחסי למסך, סיבוב, קנה מידה והיפוך.
+// 2. לתמונה: המסכה נקבעת לפי סף על שקיפות או על כהות, עם היפוך אפשרי בתוך גבולות התמונה.
+// 3. מהמסכה מחושבת מפת מרחק לשוליים (Euclidean distance transform). היא משמשת לבדיקת
+//    "בפנים", ל sizeMode=edgeDistance, ומבטיחה שכל עיגול נשאר כולו בתוך הצורה.
+// 4. Poisson disk ברדיוס משתנה: זריקת חצים עם רשת מרחבית, במעברים מהגדול לקטן.
 //    כל מועמד מתכווץ עד שהוא נכנס בין שכניו; במעברים הראשונים מתקבלים רק עיגולים
 //    שקרובים לגודל הרצוי, ובאחרונים גם קטנים שממלאים רווחים.
+// 5. לתמונה: הבהירות יכולה לקבוע את הרדיוס (stippling), והצבע נדגם מהפיקסל.
 
 import { createNoise2D } from 'simplex-noise';
 import { mulberry32 } from '../util/rng.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const INF = 1e20;
-const MASK_MAX = 1024; // רזולוציית מסכה מרבית בצלע הארוכה
+const MASK_MAX = 1200; // רזולוציית מסכה מרבית בצלע הארוכה
 const PASSES = 6;
+const PAD = 2;
 
 let bboxSvg = null;
 let bboxPath = null;
@@ -81,13 +84,25 @@ function distanceTransform(inside, w, h) {
   return grid;
 }
 
+const empty = (t0) => ({
+  count: 0,
+  x: new Float32Array(0),
+  y: new Float32Array(0),
+  r: new Float32Array(0),
+  colorT: new Float32Array(0),
+  rgb: null,
+  ms: performance.now() - t0,
+});
+
 /**
- * @param {object} scene  סצנה לפי schema.js (shape, radius, palette, seed, maxCount)
+ * @param {object} scene  סצנה לפי schema.js
  * @param {number} width  רוחב אזור התצוגה בפיקסלי CSS
  * @param {number} height גובה אזור התצוגה
- * @returns {{count:number, x:Float32Array, y:Float32Array, r:Float32Array, colorT:Float32Array, ms:number}}
+ * @param {{img: CanvasImageSource, w: number, h: number}|null} image כש shape.type הוא image
+ * @returns {{count:number, x:Float32Array, y:Float32Array, r:Float32Array, colorT:Float32Array,
+ *            rgb:Float32Array|null, ms:number}}
  */
-export function sampleScene(scene, width, height) {
+export function sampleScene(scene, width, height, image = null) {
   const t0 = performance.now();
   const { shape, radius, palette } = scene;
   const maxCount = scene.maxCount;
@@ -98,34 +113,100 @@ export function sampleScene(scene, width, height) {
   const rMax = Math.max(rMin, radius.max);
   const gap = radius.gap ?? 0;
 
-  // התאמה למסך: path במרכז, scale יחסית לצלע הקצרה של המסך
-  const bb = pathBBox(shape.d);
+  // מקור: תיבה תוחמת במערכת הצירים שלו, ופונקציית ציור
+  const isImage = shape.type === 'image';
+  let bb;
+  let draw;
+  if (isImage) {
+    if (!image || !(image.w > 0 && image.h > 0)) return empty(t0);
+    bb = { x: 0, y: 0, w: image.w, h: image.h };
+    draw = (ctx) => ctx.drawImage(image.img, 0, 0, image.w, image.h);
+  } else {
+    bb = pathBBox(shape.d);
+    const path = new Path2D(shape.d);
+    draw = (ctx) => {
+      ctx.fillStyle = '#000';
+      ctx.fill(path, shape.fillRule ?? 'nonzero');
+    };
+  }
+  if (!(bb.w > 0 && bb.h > 0)) return empty(t0);
+
+  // טרנספורמציה מהמקור אל המסך. scale יחסית להתאמה לצלע הקצרה של המסך, לפני סיבוב.
   const s = (shape.scale ?? 1) * Math.min(width / bb.w, height / bb.h);
-  const ww = bb.w * s;
-  const wh = bb.h * s;
-  const wx0 = (width - ww) / 2;
-  const wy0 = (height - wh) / 2;
+  const toWorld = new DOMMatrix()
+    .translate((shape.x ?? 0.5) * width, (shape.y ?? 0.5) * height)
+    .rotate(shape.rotation ?? 0)
+    .scale(s * (shape.flipX ? -1 : 1), s * (shape.flipY ? -1 : 1))
+    .translate(-(bb.x + bb.w / 2), -(bb.y + bb.h / 2));
+
+  // תיבה תוחמת על המסך אחרי סיבוב, חתוכה למסך עם שוליים
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [cx, cy] of [[bb.x, bb.y], [bb.x + bb.w, bb.y], [bb.x, bb.y + bb.h], [bb.x + bb.w, bb.y + bb.h]]) {
+    const p = toWorld.transformPoint({ x: cx, y: cy });
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const margin = rMax * 2;
+  const wx0 = Math.max(minX, -margin);
+  const wy0 = Math.max(minY, -margin);
+  const ww = Math.min(maxX, width + margin) - wx0;
+  const wh = Math.min(maxY, height + margin) - wy0;
+  if (!(ww > 1 && wh > 1)) return empty(t0);
 
   // מסכה
   const k = Math.min(1, MASK_MAX / Math.max(ww, wh));
-  const pad = 2;
-  const mw = Math.ceil(ww * k) + pad * 2;
-  const mh = Math.ceil(wh * k) + pad * 2;
+  const mw = Math.ceil(ww * k) + PAD * 2;
+  const mh = Math.ceil(wh * k) + PAD * 2;
+  const toMask = new DOMMatrix().translate(PAD, PAD).scale(k).translate(-wx0, -wy0).multiply(toWorld);
   const canvas = document.createElement('canvas');
   canvas.width = mw;
   canvas.height = mh;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.setTransform(k * s, 0, 0, k * s, pad - k * s * bb.x, pad - k * s * bb.y);
-  ctx.fill(new Path2D(shape.d), shape.fillRule ?? 'nonzero');
-  const img = ctx.getImageData(0, 0, mw, mh).data;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.setTransform(toMask);
+  draw(ctx);
+  const px = ctx.getImageData(0, 0, mw, mh).data;
+
+  // כהות של פיקסל, מורכב על לבן (שקוף נחשב בהיר)
+  const darkness = (i) => {
+    const a = px[i * 4 + 3] / 255;
+    const lum = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
+    return (1 - lum) * a;
+  };
+
   const inside = new Uint8Array(mw * mh);
   let insideCount = 0;
-  for (let i = 0; i < mw * mh; i++) {
-    if (img[i * 4 + 3] > 127) {
-      inside[i] = 1;
-      insideCount++;
+  if (isImage) {
+    const opt = shape.image;
+    const byLum = opt.maskBy === 'luminance';
+    const th = opt.threshold;
+    const inv = opt.invert;
+    // לבדיקה אם פיקסל בתוך גבולות התמונה (נדרש להיפוך): מטריצה הפוכה למערכת התמונה
+    const back = toMask.inverse();
+    for (let y = 0, i = 0; y < mh; y++) {
+      for (let x = 0; x < mw; x++, i++) {
+        let on = (byLum ? darkness(i) : px[i * 4 + 3] / 255) > th;
+        if (inv) {
+          const u = back.a * (x + 0.5) + back.c * (y + 0.5) + back.e;
+          const v = back.b * (x + 0.5) + back.d * (y + 0.5) + back.f;
+          on = !on && u >= 0 && v >= 0 && u < bb.w && v < bb.h;
+        }
+        if (on) {
+          inside[i] = 1;
+          insideCount++;
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < mw * mh; i++) {
+      if (px[i * 4 + 3] > 127) {
+        inside[i] = 1;
+        insideCount++;
+      }
     }
   }
+  if (insideCount === 0) return empty(t0);
+
   const dist2 = distanceTransform(inside, mw, mh);
   let maxEdge = 0;
   for (let i = 0; i < dist2.length; i++) if (dist2[i] > maxEdge) maxEdge = dist2[i];
@@ -142,25 +223,37 @@ export function sampleScene(scene, width, height) {
   const oy = new Float32Array(maxCount);
   const or = new Float32Array(maxCount);
   const oe = new Float32Array(maxCount);
+  const om = isImage ? new Int32Array(maxCount) : null; // אינדקס פיקסל במסכה, לצבע
   let count = 0;
 
   const sizeMode = radius.sizeMode;
   const noiseScale = radius.noiseScale ?? 0.006;
   const span = rMax - rMin;
-  const desired = (wx, wy, e) => {
+  const sizeAmount = isImage ? Math.min(1, Math.max(0, shape.image.sizeAmount)) : 0;
+  const sizeInvert = isImage && shape.image.sizeInvert;
+  const desired = (wx, wy, e, mi) => {
+    let r;
     if (sizeMode === 'edgeDistance') {
       const t = Math.min(1, e / (maxEdge * 0.6));
-      return rMin + span * Math.pow(t, 0.8);
+      r = rMin + span * Math.pow(t, 0.8);
+    } else if (sizeMode === 'noise') {
+      r = rMin + span * (noise2D(wx * noiseScale, wy * noiseScale) * 0.5 + 0.5);
+    } else {
+      r = rMin + span * rng();
     }
-    if (sizeMode === 'noise') {
-      const n = noise2D(wx * noiseScale, wy * noiseScale) * 0.5 + 0.5;
-      return rMin + span * n;
+    if (sizeAmount > 0) {
+      const dk = darkness(mi);
+      const rImg = rMin + span * (sizeInvert ? 1 - dk : dk);
+      r += (rImg - r) * sizeAmount;
     }
-    return rMin + span * rng();
+    return r;
   };
 
   const area = insideCount / (k * k);
-  const attemptsPerPass = Math.max(2000, Math.min(80000, Math.round((area / (Math.PI * rMin * rMin)) * 1.5)));
+  const attemptsPerPass = Math.max(
+    2000,
+    Math.min(Math.max(80000, maxCount * 6), Math.round((area / (Math.PI * rMin * rMin)) * 1.5)),
+  );
 
   outer: for (let pass = 0; pass < PASSES; pass++) {
     const q = 1 - pass / (PASSES - 1);
@@ -168,14 +261,14 @@ export function sampleScene(scene, width, height) {
       if (count >= maxCount) break outer;
       const wx = wx0 + rng() * ww;
       const wy = wy0 + rng() * wh;
-      const mx = ((wx - wx0) * k + pad) | 0;
-      const my = ((wy - wy0) * k + pad) | 0;
+      const mx = ((wx - wx0) * k + PAD) | 0;
+      const my = ((wy - wy0) * k + PAD) | 0;
       const mi = my * mw + mx;
       if (!inside[mi]) continue;
       const e = Math.sqrt(dist2[mi]) / k;
-      const r0 = desired(wx, wy, e);
       let allowed = e - 0.5;
       if (allowed < rMin) continue;
+      const r0 = desired(wx, wy, e, mi);
 
       const gx = Math.floor((wx - wx0) / cell);
       const gy = Math.floor((wy - wy0) / cell);
@@ -196,6 +289,7 @@ export function sampleScene(scene, width, height) {
       oy[count] = wy;
       or[count] = r;
       oe[count] = e;
+      if (om) om[count] = mi;
       const c = gy * gw + gx;
       next[count] = head[c];
       head[c] = count;
@@ -205,8 +299,8 @@ export function sampleScene(scene, width, height) {
 
   // מיפוי צבע: colorT בין 0 ל 1 לאורך הספקטרום
   const colorT = new Float32Array(count);
-  const cx = wx0 + ww / 2;
-  const cy = wy0 + wh / 2;
+  const ccx = wx0 + ww / 2;
+  const ccy = wy0 + wh / 2;
   const maxRad = Math.hypot(ww, wh) / 2 || 1;
   for (let i = 0; i < count; i++) {
     let t;
@@ -214,11 +308,23 @@ export function sampleScene(scene, width, height) {
       case 'x': t = (ox[i] - wx0) / ww; break;
       case 'radius': t = span > 0 ? (or[i] - rMin) / span : 0.5; break;
       case 'edge': t = oe[i] / maxEdge; break;
-      case 'radial': t = Math.hypot(ox[i] - cx, oy[i] - cy) / maxRad; break;
+      case 'radial': t = Math.hypot(ox[i] - ccx, oy[i] - ccy) / maxRad; break;
       case 'random': t = rng(); break;
       default: t = (oy[i] - wy0) / wh;
     }
     colorT[i] = Math.min(1, Math.max(0, t));
+  }
+
+  // צבע מהתמונה בנקודת המרכז של כל עיגול
+  let rgb = null;
+  if (om) {
+    rgb = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const j = om[i] * 4;
+      rgb[i * 3] = px[j] / 255;
+      rgb[i * 3 + 1] = px[j + 1] / 255;
+      rgb[i * 3 + 2] = px[j + 2] / 255;
+    }
   }
 
   return {
@@ -227,6 +333,7 @@ export function sampleScene(scene, width, height) {
     y: oy.subarray(0, count),
     r: or.subarray(0, count),
     colorT,
+    rgb,
     ms: performance.now() - t0,
   };
 }

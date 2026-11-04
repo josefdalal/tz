@@ -9,7 +9,27 @@ export const defaultScene = {
   id: 'intro',
   seed: 42,
   maxCount: 5000,
-  shape: { type: 'svgPath', d: shapes.square, fit: 'center', scale: 0.6, fillRule: 'nonzero' },
+  shape: {
+    type: 'svgPath', // svgPath: צורה מ d. image: קובץ מהתיקייה shapes (SVG, PNG, JPG)
+    d: shapes.square,
+    fillRule: 'nonzero',
+    src: '', // שם קובץ בתיקייה shapes, כש type הוא image
+    // טרנספורמציה: מרכז הצורה יחסית למסך, סיבוב במעלות, קנה מידה יחסית לצלע הקצרה
+    x: 0.5,
+    y: 0.5,
+    rotation: 0,
+    scale: 0.6,
+    flipX: false,
+    flipY: false,
+    image: {
+      maskBy: 'alpha', // alpha או luminance (כהה בפנים)
+      threshold: 0.5,
+      invert: false, // היפוך המסכה, בתוך גבולות התמונה
+      sizeAmount: 0, // 0 רדיוס לפי sizeMode, 1 רדיוס לפי בהירות התמונה (stippling)
+      sizeInvert: false, // false: כהה גדול. true: בהיר גדול
+      colorMix: 0, // 0 צבע מהספקטרום, 1 צבע מהתמונה
+    },
+  },
   radius: { min: 2, max: 12, sizeMode: 'edgeDistance', gap: 0.5, noiseScale: 0.006 },
   palette: {
     space: 'oklch',
@@ -33,6 +53,7 @@ export const defaultScene = {
 
 export const sizeModes = ['random', 'edgeDistance', 'noise'];
 export const mapByModes = ['y', 'x', 'radius', 'edge', 'radial', 'random'];
+export const maskByModes = ['alpha', 'luminance'];
 
 // שלושה סוגי פריסטים. scene מכיל גם palette ו motion; השניים האחרים הם חלקים ממנו.
 export const KINDS = {

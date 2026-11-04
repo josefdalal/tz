@@ -47,22 +47,25 @@ export function downloadJSON(data, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** פותח בחירת קובץ ומחזיר את ה JSON שבו, או null אם בוטל. */
-export function pickJSONFile() {
-  return new Promise((resolve, reject) => {
+/** פותח בחירת קובץ ומחזיר File, או null אם בוטל. */
+export function pickFile(accept) {
+  return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json,application/json';
-    input.addEventListener('change', async () => {
-      const f = input.files?.[0];
-      if (!f) return resolve(null);
-      try {
-        resolve(JSON.parse(await f.text()));
-      } catch (e) {
-        reject(new Error(`JSON לא תקין: ${e.message}`));
-      }
-    });
+    input.accept = accept;
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
     input.addEventListener('cancel', () => resolve(null));
     input.click();
   });
+}
+
+/** פותח בחירת קובץ ומחזיר את ה JSON שבו, או null אם בוטל. */
+export async function pickJSONFile() {
+  const f = await pickFile('.json,application/json');
+  if (!f) return null;
+  try {
+    return JSON.parse(await f.text());
+  } catch (e) {
+    throw new Error(`JSON לא תקין: ${e.message}`);
+  }
 }

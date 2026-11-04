@@ -20,9 +20,22 @@
 
 הרינדור ב WebGL מההתחלה (Three.js, מצלמה אורתוגרפית, InstancedBufferGeometry עם ShaderMaterial, קריאת ציור אחת לכל העיגולים). התנועה הצבעונית בתוך העיגול ומראה הכדור מחושבים בשיידר.
 
-הצורות מוגדרות כ SVG path. מילוי: Path2D ובדיקת isPointInPath, ופיזור Poisson disk ברדיוס משתנה בלי חפיפות, עם RNG מבוסס seed. ריבוע ומשולש הם פשוט ה paths הראשונים; כל SVG מיוצא מאילוסטרייטור עובד באותו מנגנון.
+## צורות
 
-מאגר עיגולים קבוע (pool) לכל האתר. כל סצנה מקצה נקודות בית לחלק מהעיגולים; העודפים נעלמים (רדיוס לאפס) או נודדים מחוץ לצורה. גם הרדיוס והצבע של כל עיגול עוברים אינטרפולציה בין סצנות.
+יש שני מקורות לצורה. הראשון הוא SVG path (`shape.type: "svgPath"`, השדה `d`); ריבוע, משולש ועיגול הם paths מהספרייה. השני הוא קובץ בתיקייה shapes בריפו (`shape.type: "image"`, השדה `src` הוא שם הקובץ): SVG, PNG, JPG או WEBP. קובץ SVG מצויר לתוך המסכה כתמונה, כמו שהוא, בלי פענוח paths. נקראות רק תכונות השורש (width, height, viewBox), כדי לתת לתמונה גודל מפורש.
+
+המקור מצויר למסכה (קנבס דו ממדי) דרך מטריצה אחת: `x` ו `y` הם מרכז הצורה יחסית למסך (0 עד 1), `rotation` במעלות, `scale` יחסית להתאמה לצלע הקצרה של המסך, `flipX` ו `flipY`. מהמסכה מחושבת מפת מרחק לשוליים (EDT). המפה משמשת לבדיקה אם נקודה בפנים, למצב edgeDistance, ולוודא שעיגול לא חורג מהצורה. הפיזור הוא Poisson disk ברדיוס משתנה בלי חפיפות, עם RNG מבוסס seed.
+
+לקובץ תמונה יש הגדרות ב `shape.image`:
+- `maskBy`: לפי alpha או לפי luminance (כהה בפנים). `threshold` הוא הסף. `invert` הופך את המסכה, רק בתוך גבולות התמונה.
+- `sizeAmount`: בין 0 (רדיוס לפי sizeMode) ל 1 (רדיוס לפי בהירות התמונה, stippling). כברירת מחדל כהה גדול; `sizeInvert` הופך.
+- `colorMix`: בין 0 (צבע מהספקטרום) ל 1 (צבע מהפיקסל במרכז העיגול). הערבוב קורה בשיידר, לכל עיגול (`imgMix`), ושינוי שלו לא דורש דגימה מחדש.
+
+העלאה מהפאנל שומרת את הקובץ ל shapes/ דרך ה plugin. בבנייה, בלי שרת, הקובץ נטען לסשן בלבד. הרשימה נבנית מ `import.meta.glob` ב src/shapes/files.js, שמקבל את עצמו ב HMR. שני דברים לשים אליהם לב. Vite מגיש קבצים קטנים כ data: URL, ולכן אסור להוסיף להם query. וקובץ תמונה שנדרס גרם במקור לרענון מלא, ולכן ה plugin מפנה את העדכון ל files.js בעזרת `hotUpdate`.
+
+## מאגר
+
+מאגר עיגולים (pool) אחד לכל האתר, במערכי Float32Array. הוא גדל לפי הצורך, בצעדים של 1000 ועד 30000 (`MAX_POOL`), ולא קטן. הגדילה קורית רק אחרי דגימה, ואז הרינדור בונה buffers חדשים (`renderer.rebind`). `count` הוא מספר העיגולים שקיבלו נקודת בית. `active` הוא גבול הלולאות: הוא גדול מ count כל עוד עודפים עדיין מתכווצים לאפס, וחוזר ל count כשהם נעלמים. כל סצנה מקצה נקודות בית לחלק מהעיגולים; העודפים נעלמים (רדיוס לאפס) או נודדים מחוץ לצורה. גם הרדיוס והצבע של כל עיגול עוברים אינטרפולציה בין סצנות.
 
 סצנה נשמרת כ JSON: פרמטרים ו seed, לא מיקומים של עיגולים, כך שהיא משוחזרת במדויק. ייצוא CSV של רשימת עיגולים (x, y, r, color) רק כאפשרות משנית.
 
@@ -34,12 +47,14 @@ Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noi
 
 ```
 src/
-  sim/       particles.js  מערכי Float32Array: x, y, vx, vy, homeX, homeY, r, targetR, colorT, phase,
-                           offX, offY, pulse, drawR
+  sim/       particles.js  מאגר שגדל: x, y, vx, vy, homeX, homeY, r, targetR, colorT, phase,
+                           offX, offY, pulse, drawR, imgMix, imgColor (vec3)
              motion.js     תנועה פנימית: פעימה, נדידה, קוהרנטיות (noise אישי מול שדה משותף)
              physics.js    קפיץ, שיכוך, רשת מרחבית להתנגשויות, substeps
-  shapes/    sampler.js    SVG path אל נקודות בית ברדיוס משתנה
+  shapes/    sampler.js    path או תמונה, דרך טרנספורמציה, אל מסכה, EDT ונקודות בית
              library.js    ריבוע, משולש, עיגול
+             files.js      מאגר הקבצים מ shapes/ (import.meta.glob), העלאה
+             images.js     טעינת קובץ לתמונה (SVG עם width ו height מפורשים)
   scenes/    schema.js     ברירות מחדל, SCHEMA_VERSION, migrations, toFile ו fromFile
              presets.js    מאגר הפריסטים מ import.meta.glob, שמירה דרך ה plugin
              persist.js    localStorage, ייצוא וייבוא של קובץ JSON
@@ -53,7 +68,8 @@ src/
 scenes/      פריסטים של סצנה שלמה, קובץ JSON לכל אחד
 palettes/    פריסטים של פלטה (scene.palette)
 motions/     פריסטים של תנועה (scene.motion)
-vite.config.js  base יחסי ל Pages, ו plugin פיתוח ששומר פריסטים לתיקיות
+shapes/      קבצי צורה (SVG, PNG, JPG, WEBP) שסצנה מפנה אליהם בשם
+vite.config.js  base יחסי ל Pages, ו plugin פיתוח: /__presets (JSON), /__shapes (בינארי), hotUpdate ל shapes/
 ```
 
 ## שמירה וטעינה
@@ -77,7 +93,11 @@ vite.config.js  base יחסי ל Pages, ו plugin פיתוח ששומר פריס
   "id": "intro",
   "seed": 42,
   "maxCount": 5000,
-  "shape": { "type": "svgPath", "d": "M0 0 L400 0 L400 400 L0 400 Z", "fit": "center", "scale": 0.6, "fillRule": "nonzero" },
+  "shape": {
+    "type": "svgPath", "d": "M0 0 L400 0 L400 400 L0 400 Z", "fillRule": "nonzero", "src": "",
+    "x": 0.5, "y": 0.5, "rotation": 0, "scale": 0.6, "flipX": false, "flipY": false,
+    "image": { "maskBy": "alpha", "threshold": 0.5, "invert": false, "sizeAmount": 0, "sizeInvert": false, "colorMix": 0 }
+  },
   "radius": { "min": 2, "max": 12, "sizeMode": "edgeDistance", "gap": 0.5, "noiseScale": 0.006 },
   "palette": { "space": "oklch", "stops": ["#0b1d51", "#3a6ea5", "#ff6b6b"], "mapBy": "y", "background": "#f3efe6" },
   "motion": {
@@ -101,7 +121,7 @@ sizeMode: random, edgeDistance (גדולים בפנים וקטנים בשולי�
 
 ## עקרונות
 
-הסימולציה מופרדת מהרינדור ומהגלילה. בלי הקצאות זיכרון בתוך לולאת הפריים. יעד ביצועים: 60 פריימים עם 5000 עיגולים בשני המחשבים של המשתמש. מעברים נגזרים מהתקדמות הגלילה כך שהם הפיכים; הפיזיקה רק מחליקה את הדרך אל המטרות.
+הסימולציה מופרדת מהרינדור ומהגלילה. בלי הקצאות זיכרון בתוך לולאת הפריים (גדילת המאגר קורית רק בדגימה). יעד ביצועים: 60 פריימים עם 5000 עיגולים בשני המחשבים של המשתמש; עד 30000 נתמך, בלי התחייבות ל 60. מעברים נגזרים מהתקדמות הגלילה כך שהם הפיכים; הפיזיקה רק מחליקה את הדרך אל המטרות.
 
 ## שלבים
 

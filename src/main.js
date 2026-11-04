@@ -1,10 +1,12 @@
-import { createParticles, scatter, assignHomes, POOL_SIZE } from './sim/particles.js';
+import { createParticles, growParticles, assignHomes, setImageMix, MAX_POOL } from './sim/particles.js';
 import { relax } from './sim/physics.js';
 import { createMotion, updateMotion } from './sim/motion.js';
 import { sampleScene } from './shapes/sampler.js';
+import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName, isSvgName } from './shapes/files.js';
+import { loadShapeImage } from './shapes/images.js';
 import { defaultScene, KINDS, toFile, fromFile } from './scenes/schema.js';
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
-import { loadLocal, saveLocal, clearLocal, downloadJSON, pickJSONFile } from './scenes/persist.js';
+import { loadLocal, saveLocal, clearLocal, downloadJSON, pickJSONFile, pickFile } from './scenes/persist.js';
 import { createRenderer } from './render/renderer.js';
 import { createGui, guiEnabled } from './ui/gui.js';
 import { assignInPlace, clone } from './util/merge.js';
@@ -27,24 +29,70 @@ function initialScene() {
 
 const canvas = document.getElementById('stage');
 const scene = initialScene();
-const particles = createParticles(POOL_SIZE);
-const renderer = createRenderer(canvas, particles);
-const stats = { count: 0, sampleMs: 0, fps: 0 };
-const motion = createMotion(scene.seed);
-
 let width = window.innerWidth;
 let height = window.innerHeight;
+const poolRng = mulberry32(scene.seed + 1);
+const particles = createParticles();
+growParticles(particles, Math.min(MAX_POOL, scene.maxCount), poolRng, width, height);
+const renderer = createRenderer(canvas, particles);
+const stats = { count: 0, pool: particles.capacity, sampleMs: 0, fps: 0 };
+const motion = createMotion(scene.seed);
 renderer.resize(width, height);
-scatter(particles, mulberry32(scene.seed + 1), width, height);
 
 let needsResample = true;
 const requestResample = () => { needsResample = true; };
 
-function resample() {
-  const samples = sampleScene(scene, width, height);
-  stats.count = assignHomes(particles, samples);
+// דגימה אסינכרונית: קובץ צורה נטען לפני הדגימה. רק הבקשה האחרונה מוחלת.
+let resampleToken = 0;
+async function resample() {
+  const token = ++resampleToken;
+  let image = null;
+  const sh = scene.shape;
+  if (sh.type === 'image') {
+    const url = shapeFiles[sh.src];
+    if (!url) {
+      gui?.status(`קובץ צורה לא נמצא: ${sh.src}`);
+    } else {
+      try {
+        image = await loadShapeImage(url, isSvgName(sh.src));
+      } catch (e) {
+        gui?.status(`שגיאה בטעינת ${sh.src}: ${e.message}`);
+      }
+    }
+    if (token !== resampleToken) return;
+  }
+  const samples = sampleScene(scene, width, height, image);
+  if (growParticles(particles, samples.count, poolRng, width, height)) renderer.rebind();
+  stats.count = assignHomes(particles, samples, sh.image.colorMix);
+  stats.pool = particles.capacity;
   stats.sampleMs = Math.round(samples.ms);
+  renderer.invalidateColors();
 }
+
+const applyImageMix = () => {
+  if (scene.shape.type !== 'image') return;
+  setImageMix(particles, scene.shape.image.colorMix);
+  renderer.invalidateColors();
+};
+
+const shapeFileHooks = {
+  names: shapeFileNames,
+  onChange: onShapeFilesChange,
+  async upload() {
+    const file = await pickFile('.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp');
+    if (!file) return '';
+    const name = normalizeFileName(file.name);
+    if (!name) throw new Error('שם קובץ לא תקין: אותיות, ספרות, _ ו - בלבד, עם סיומת svg, png, jpg או webp');
+    if (shapeFiles[name] && !confirm(`הקובץ ${name} כבר קיים ב shapes. לדרוס?`)) return '';
+    const { persisted } = await uploadShapeFile(file, name);
+    scene.shape.type = 'image';
+    scene.shape.src = name;
+    // לקובץ בלי שקיפות, מסכה לפי בהירות היא ברירת המחדל הסבירה
+    if (/\.jpe?g$/.test(name)) scene.shape.image.maskBy = 'luminance';
+    requestResample();
+    return persisted ? `נשמר shapes/${name}` : `${name} נטען לסשן בלבד (אין שרת פיתוח)`;
+  },
+};
 
 const applyPalette = () => renderer.setPalette(scene.palette.stops, scene.palette.space);
 const applyBackground = () => renderer.setBackground(scene.palette.background);
@@ -105,7 +153,14 @@ const gui = createGui(scene, stats, {
   onResample: requestResample,
   onPalette: applyPalette,
   onBackground: applyBackground,
+  onImageMix: applyImageMix,
   presets,
+  shapeFiles: shapeFileHooks,
+});
+
+// קובץ צורה שהשתנה בדיסק (HMR) צריך דגימה מחדש אם הוא הצורה הנוכחית
+onShapeFilesChange(() => {
+  if (scene.shape.type === 'image') requestResample();
 });
 
 // שמירה אוטומטית של המצב הנוכחי, רק כשהפאנל פעיל (גולשים רואים תמיד את הסצנה שנבנתה)

@@ -8,10 +8,14 @@ const vertexShader = /* glsl */ `
   attribute float aY;
   attribute float aR;
   attribute float aColorT;
+  attribute vec3 aImgColor;
+  attribute float aImgMix;
 
   varying vec2 vPx;      // היסט מהמרכז בפיקסלי CSS
   varying float vR;
   varying float vColorT;
+  varying vec3 vImgColor;
+  varying float vImgMix;
 
   void main() {
     if (aR < 0.01) {
@@ -20,6 +24,8 @@ const vertexShader = /* glsl */ `
     }
     vR = aR;
     vColorT = aColorT;
+    vImgColor = aImgColor;
+    vImgMix = aImgMix;
     vPx = position.xy * (aR + 1.0); // פיקסל רזרבה לצורך החלקת שוליים
     vec2 p = vec2(aX, aY) + vPx;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 0.0, 1.0);
@@ -33,12 +39,15 @@ const fragmentShader = /* glsl */ `
   varying vec2 vPx;
   varying float vR;
   varying float vColorT;
+  varying vec3 vImgColor;
+  varying float vImgMix;
 
   void main() {
     float d = length(vPx);
     float alpha = clamp((vR - d) * uPixelRatio + 0.5, 0.0, 1.0);
     if (alpha <= 0.0) discard;
     vec3 col = texture2D(uPalette, vec2(vColorT, 0.5)).rgb;
+    col = mix(col, vImgColor, vImgMix);
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -52,23 +61,8 @@ export function createRenderer(canvas, particles) {
   const camera = new THREE.OrthographicCamera(0, 1, 0, 1, -1, 1);
   const scene = new THREE.Scene();
 
-  const geometry = new THREE.InstancedBufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3),
-  );
-  geometry.setIndex([0, 1, 2, 0, 2, 3]);
-
-  // מערכי הסימולציה עצמם משמשים כ buffers, בלי העתקה
-  const dyn = (arr) => new THREE.InstancedBufferAttribute(arr, 1).setUsage(THREE.DynamicDrawUsage);
-  const attrs = {
-    aX: dyn(particles.x),
-    aY: dyn(particles.y),
-    aR: dyn(particles.drawR),
-    aColorT: dyn(particles.colorT),
-  };
-  for (const [name, a] of Object.entries(attrs)) geometry.setAttribute(name, a);
-  geometry.instanceCount = particles.capacity;
+  const quad = new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3);
+  const index = [0, 1, 2, 0, 2, 3];
 
   const lut = new Uint8Array(LUT_SIZE * 4);
   const paletteTex = new THREE.DataTexture(lut, LUT_SIZE, 1, THREE.RGBAFormat);
@@ -89,9 +83,46 @@ export function createRenderer(canvas, particles) {
     side: THREE.DoubleSide, // ציר y הפוך במצלמה הופך את כיוון המשולשים
   });
 
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(new THREE.InstancedBufferGeometry(), material);
   mesh.frustumCulled = false;
   scene.add(mesh);
+
+  // מערכי הסימולציה עצמם משמשים כ buffers, בלי העתקה.
+  // דינמיים: מתעדכנים בכל פריים. צבע: רק אחרי invalidateColors.
+  let dynamicAttrs = [];
+  let colorAttrs = [];
+  let colorsDirty = true;
+
+  /** בונה geometry חדשה מעל המערכים הנוכחיים. נקרא בהתחלה ואחרי גדילת המאגר. */
+  function bind() {
+    const geometry = new THREE.InstancedBufferGeometry();
+    geometry.setAttribute('position', quad);
+    geometry.setIndex(index);
+    const attr = (arr, size) => new THREE.InstancedBufferAttribute(arr, size).setUsage(THREE.DynamicDrawUsage);
+    const a = {
+      aX: attr(particles.x, 1),
+      aY: attr(particles.y, 1),
+      aR: attr(particles.drawR, 1),
+      aColorT: attr(particles.colorT, 1),
+      aImgColor: attr(particles.imgColor, 3),
+      aImgMix: attr(particles.imgMix, 1),
+    };
+    for (const [name, at] of Object.entries(a)) geometry.setAttribute(name, at);
+    dynamicAttrs = [a.aX, a.aY, a.aR];
+    colorAttrs = [a.aColorT, a.aImgColor, a.aImgMix];
+    mesh.geometry.dispose();
+    mesh.geometry = geometry;
+    colorsDirty = true;
+  }
+  bind();
+
+  function upload(attrs, n) {
+    for (const at of attrs) {
+      at.clearUpdateRanges();
+      at.addUpdateRange(0, n * at.itemSize);
+      at.needsUpdate = true;
+    }
+  }
 
   function resize(width, height) {
     renderer.setSize(width, height);
@@ -113,12 +144,25 @@ export function createRenderer(canvas, particles) {
   }
 
   function render() {
-    attrs.aX.needsUpdate = true;
-    attrs.aY.needsUpdate = true;
-    attrs.aR.needsUpdate = true;
-    attrs.aColorT.needsUpdate = true;
+    const n = particles.active;
+    mesh.geometry.instanceCount = n;
+    if (n > 0) {
+      upload(dynamicAttrs, n);
+      if (colorsDirty) {
+        upload(colorAttrs, n);
+        colorsDirty = false;
+      }
+    }
     renderer.render(scene, camera);
   }
 
-  return { resize, setPalette, setBackground, render, three: renderer };
+  return {
+    resize,
+    setPalette,
+    setBackground,
+    render,
+    rebind: bind,
+    invalidateColors: () => { colorsDirty = true; },
+    three: renderer,
+  };
 }

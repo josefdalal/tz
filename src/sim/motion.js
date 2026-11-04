@@ -50,7 +50,7 @@ export function updateMotion(m, p, cfg, seed, dt) {
   const useField = c > 0;
 
   const { homeX, homeY, phase, offX, offY, pulse } = p;
-  for (let i = 0; i < p.capacity; i++) {
+  for (let i = 0; i < p.active; i++) {
     const ph = phase[i];
     let wx = 0;
     let wy = 0;
