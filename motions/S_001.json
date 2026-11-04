@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "type": "motion",
+  "speed": 1,
+  "pulse": {
+    "amount": 8,
+    "speed": 0.4
+  },
+  "wander": {
+    "range": 3,
+    "speed": 0.25
+  },
+  "coherence": 0.7,
+  "fieldScale": 0.004,
+  "colorShift": 0.1
+}
