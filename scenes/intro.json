@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "type": "scene",
+  "id": "intro",
+  "seed": 42,
+  "maxCount": 5000,
+  "shape": {
+    "type": "svgPath",
+    "d": "M0 0 L400 0 L400 400 L0 400 Z",
+    "fit": "center",
+    "scale": 0.6,
+    "fillRule": "nonzero"
+  },
+  "radius": {
+    "min": 2,
+    "max": 12,
+    "sizeMode": "edgeDistance",
+    "gap": 0.5,
+    "noiseScale": 0.006
+  },
+  "palette": {
+    "space": "oklch",
+    "stops": [
+      "#0b1d51",
+      "#3a6ea5",
+      "#ff6b6b"
+    ],
+    "mapBy": "y",
+    "background": "#f3efe6"
+  },
+  "motion": {
+    "speed": 1,
+    "pulse": {
+      "amount": 8,
+      "speed": 0.4
+    },
+    "wander": {
+      "range": 3,
+      "speed": 0.25
+    },
+    "coherence": 0,
+    "fieldScale": 0.004,
+    "colorShift": 0.1
+  },
+  "physics": {
+    "stiffness": 0.08,
+    "damping": 0.88,
+    "collision": 1,
+    "mouseRadius": 80
+  },
+  "enter": {
+    "mode": "fromCenter"
+  },
+  "exit": {
+    "mode": "disperse",
+    "strength": 1
+  },
+  "render": {
+    "mode": "flat",
+    "lightDir": [
+      -0.4,
+      -0.6,
+      0.7
+    ]
+  }
+}

@@ -1,13 +1,22 @@
 import { shapes } from '../shapes/library.js';
+import { deepMerge, clone } from '../util/merge.js';
 
-// ערכי ברירת מחדל של סצנה. בשלב 4 יתווספו שמירה וטעינה של JSON.
+// גרסת מבנה הקבצים. כשמשנים מבנה באופן שמיזוג עם ברירות מחדל לא מספיק
+// (שינוי שם או העברת שדה), מעלים את הגרסה ומוסיפים פונקציה ל migrations.
+export const SCHEMA_VERSION = 1;
+
 export const defaultScene = {
   id: 'intro',
   seed: 42,
   maxCount: 5000,
   shape: { type: 'svgPath', d: shapes.square, fit: 'center', scale: 0.6, fillRule: 'nonzero' },
   radius: { min: 2, max: 12, sizeMode: 'edgeDistance', gap: 0.5, noiseScale: 0.006 },
-  palette: { space: 'oklch', stops: ['#0b1d51', '#3a6ea5', '#ff6b6b'], mapBy: 'y' },
+  palette: {
+    space: 'oklch',
+    stops: ['#0b1d51', '#3a6ea5', '#ff6b6b'],
+    mapBy: 'y',
+    background: '#f3efe6',
+  },
   motion: {
     speed: 1, // מכפיל כללי לכל מהירויות התנועה
     pulse: { amount: 8, speed: 0.4 }, // amount באחוזים מהרדיוס, speed במחזורים לשנייה
@@ -19,8 +28,47 @@ export const defaultScene = {
   physics: { stiffness: 0.08, damping: 0.88, collision: 1.0, mouseRadius: 80 },
   enter: { mode: 'fromCenter' },
   exit: { mode: 'disperse', strength: 1.0 },
-  render: { mode: 'flat', lightDir: [-0.4, -0.6, 0.7], background: '#f3efe6' },
+  render: { mode: 'flat', lightDir: [-0.4, -0.6, 0.7] },
 };
 
 export const sizeModes = ['random', 'edgeDistance', 'noise'];
 export const mapByModes = ['y', 'x', 'radius', 'edge', 'radial', 'random'];
+
+// שלושה סוגי פריסטים. scene מכיל גם palette ו motion; השניים האחרים הם חלקים ממנו.
+export const KINDS = {
+  scene: { folder: 'scenes', label: 'סצנה', defaults: () => defaultScene },
+  palette: { folder: 'palettes', label: 'פלטה', defaults: () => defaultScene.palette },
+  motion: { folder: 'motions', label: 'תנועה', defaults: () => defaultScene.motion },
+};
+
+// migrations[kind][v] ממיר נתונים מגרסה v לגרסה v+1. כרגע אין.
+const migrations = { scene: {}, palette: {}, motion: {} };
+
+/** נתונים חיים אל מבנה קובץ: version ו type בראש, ואחריהם השדות. */
+export function toFile(kind, data) {
+  return { version: SCHEMA_VERSION, type: kind, ...clone(data) };
+}
+
+/**
+ * מבנה קובץ אל נתונים חיים: זיהוי סוג, הרצת migrations ומיזוג עמוק עם ברירות המחדל.
+ * @param {object} file
+ * @param {string} [expectedKind] אם ניתן, קובץ מסוג אחר נדחה. קובץ בלי type מקבל אותו.
+ */
+export function fromFile(file, expectedKind) {
+  if (file === null || typeof file !== 'object' || Array.isArray(file)) throw new Error('קובץ JSON לא תקין');
+  const kind = file.type ?? expectedKind;
+  if (!KINDS[kind]) throw new Error(`סוג קובץ לא מוכר: ${kind}`);
+  if (expectedKind && kind !== expectedKind) throw new Error(`צפוי ${expectedKind}, התקבל ${kind}`);
+
+  let version = Number.isFinite(file.version) ? file.version : 1;
+  if (version > SCHEMA_VERSION) console.warn(`[tz] הקובץ מגרסה ${version}, הקוד מכיר עד ${SCHEMA_VERSION}`);
+
+  let data = clone(file);
+  delete data.version;
+  delete data.type;
+  for (; version < SCHEMA_VERSION; version++) {
+    const step = migrations[kind][version];
+    if (step) data = step(data);
+  }
+  return { kind, data: deepMerge(KINDS[kind].defaults(), data) };
+}

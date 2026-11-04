@@ -1,27 +1,71 @@
 import GUI from 'lil-gui';
 import { shapes } from '../shapes/library.js';
-import { sizeModes, mapByModes } from '../scenes/schema.js';
+import { sizeModes, mapByModes, KINDS } from '../scenes/schema.js';
 import { POOL_SIZE } from '../sim/particles.js';
 
 export const guiEnabled = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 
 const MAX_STOPS = 6;
+const shapeNameOf = (d) => Object.keys(shapes).find((k) => shapes[k] === d) ?? '';
 
 /**
  * פאנל שליטה. מופיע רק במצב פיתוח או עם ?debug.
- * onResample: שינוי שמחייב דגימה מחדש. onPalette: שינוי צבעים בלבד.
+ * hooks.onResample: שינוי שמחייב דגימה מחדש. hooks.onPalette: צבעים בלבד.
+ * hooks.presets: save(kind, name), load(kind, name), names(kind), onChange(fn),
+ *                exportJSON(), importJSON(), reset()
+ * מחזיר { refresh, status } או null כשהפאנל כבוי.
  */
-export function createGui(scene, stats, { onResample, onPalette, onBackground }) {
+export function createGui(scene, stats, hooks) {
   if (!guiEnabled) return null;
+  const { onResample, onPalette, onBackground, presets } = hooks;
 
   const gui = new GUI({ title: 'tz' });
   gui.domElement.setAttribute('dir', 'ltr'); // ה CSS של lil-gui מניח LTR; הדף עצמו RTL
-  const ui = { shape: Object.keys(shapes).find((k) => shapes[k] === scene.shape.d) ?? 'square' };
+  const ui = { shape: shapeNameOf(scene.shape.d), name: scene.id ?? '', status: '' };
 
   const info = gui.addFolder('מידע');
   info.add(stats, 'count').name('עיגולים').listen().disable();
   info.add(stats, 'sampleMs').name('דגימה ms').listen().disable();
   info.add(stats, 'fps').name('fps').listen().disable();
+
+  // פריסטים
+  const fPresets = gui.addFolder('פריסטים');
+  fPresets.add(ui, 'status').name('מצב').listen().disable();
+  const nameCtrl = fPresets.add(ui, 'name').name('שם');
+  const run = async (fn) => {
+    try {
+      ui.status = (await fn()) ?? '';
+    } catch (e) {
+      ui.status = `שגיאה: ${e.message}`;
+      console.error(e);
+    }
+  };
+  for (const kind of Object.keys(KINDS)) {
+    fPresets.add({ go: () => run(() => presets.save(kind, ui.name)) }, 'go').name(`שמור ${KINDS[kind].label}`);
+  }
+  const loadUi = { scene: '', palette: '', motion: '' };
+  const loadCtrls = {};
+  const optionsFor = (kind) => ({ '': '', ...Object.fromEntries(presets.names(kind).map((n) => [n, n])) });
+  for (const kind of Object.keys(KINDS)) {
+    loadCtrls[kind] = fPresets
+      .add(loadUi, kind, optionsFor(kind))
+      .name(`טען ${KINDS[kind].label}`)
+      .onChange((name) => {
+        if (!name) return;
+        run(() => presets.load(kind, name));
+        ui.name = name;
+        nameCtrl.updateDisplay();
+        // חוזרים לריק כדי שאפשר יהיה לטעון שוב את אותו פריסט אחרי שינויים
+        loadUi[kind] = '';
+        loadCtrls[kind].updateDisplay();
+      });
+  }
+  presets.onChange(() => {
+    for (const kind of Object.keys(KINDS)) loadCtrls[kind].options(optionsFor(kind));
+  });
+  fPresets.add({ go: () => run(presets.exportJSON) }, 'go').name('ייצוא JSON');
+  fPresets.add({ go: () => run(presets.importJSON) }, 'go').name('ייבוא JSON');
+  fPresets.add({ go: () => run(presets.reset) }, 'go').name('איפוס לברירת מחדל');
 
   const fShape = gui.addFolder('צורה');
   fShape.add(ui, 'shape', Object.keys(shapes)).name('צורה').onChange((name) => {
@@ -57,17 +101,9 @@ export function createGui(scene, stats, { onResample, onPalette, onBackground })
 
   const fPalette = gui.addFolder('ספקטרום');
   fPalette.add(scene.palette, 'mapBy', mapByModes).name('מיפוי לפי').onChange(onResample);
-  fPalette.addColor(scene.render, 'background').name('רקע').onChange(onBackground);
+  fPalette.addColor(scene.palette, 'background').name('רקע').onChange(onBackground);
   const fStops = fPalette.addFolder('עצירות');
-  const buildStops = () => {
-    for (const c of [...fStops.controllers]) c.destroy();
-    scene.palette.stops.forEach((_, i) => {
-      fStops.addColor(scene.palette.stops, i).name(`${i + 1}`).onChange(onPalette);
-    });
-    fStops.add(actions, 'add').name('הוסף עצירה');
-    fStops.add(actions, 'remove').name('הסר עצירה');
-  };
-  const actions = {
+  const stopActions = {
     add: () => {
       const s = scene.palette.stops;
       if (s.length >= MAX_STOPS) return;
@@ -83,7 +119,25 @@ export function createGui(scene, stats, { onResample, onPalette, onBackground })
       onPalette();
     },
   };
+  function buildStops() {
+    for (const c of [...fStops.controllers]) c.destroy();
+    scene.palette.stops.forEach((_, i) => {
+      fStops.addColor(scene.palette.stops, i).name(`${i + 1}`).onChange(onPalette);
+    });
+    fStops.add(stopActions, 'add').name('הוסף עצירה');
+    fStops.add(stopActions, 'remove').name('הסר עצירה');
+  }
   buildStops();
 
-  return gui;
+  /** אחרי טעינה: מסנכרן את הפאנל עם הערכים החדשים באובייקט scene. */
+  function refresh() {
+    ui.shape = shapeNameOf(scene.shape.d);
+    buildStops();
+    for (const c of gui.controllersRecursive()) c.updateDisplay();
+  }
+
+  return {
+    refresh,
+    status: (s) => { ui.status = s; },
+  };
 }

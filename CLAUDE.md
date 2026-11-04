@@ -34,29 +34,60 @@ Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noi
 
 ```
 src/
-  sim/       particles.js  מערכי Float32Array: x, y, vx, vy, homeX, homeY, r, targetR, colorT, phase
+  sim/       particles.js  מערכי Float32Array: x, y, vx, vy, homeX, homeY, r, targetR, colorT, phase,
+                           offX, offY, pulse, drawR
+             motion.js     תנועה פנימית: פעימה, נדידה, קוהרנטיות (noise אישי מול שדה משותף)
              physics.js    קפיץ, שיכוך, רשת מרחבית להתנגשויות, substeps
   shapes/    sampler.js    SVG path אל נקודות בית ברדיוס משתנה
              library.js    ריבוע, משולש, עיגול
-  scenes/    schema.js     מבנה JSON של סצנה וערכי ברירת מחדל
+  scenes/    schema.js     ברירות מחדל, SCHEMA_VERSION, migrations, toFile ו fromFile
+             presets.js    מאגר הפריסטים מ import.meta.glob, שמירה דרך ה plugin
+             persist.js    localStorage, ייצוא וייבוא של קובץ JSON
              manager.js    הקצאת עיגולים בין סצנות, אינטרפולציה
              transitions.js מצבי כניסה ויציאה
   scroll/    storyboard.js ScrollTrigger ו Lenis: התקדמות גלילה אל אינדקס סצנה ו t מקומי
   render/    renderer.js   Three.js, שיידר שטוח וכדור
-  ui/        gui.js        lil-gui, שמירה וטעינה של JSON
-scenes/      קבצי JSON של סצנות
+             palette.js    טבלת צבעים מאינטרפולציה ב OKLCH
+  ui/        gui.js        lil-gui
+  util/      rng.js, merge.js (deepMerge, assignInPlace)
+scenes/      פריסטים של סצנה שלמה, קובץ JSON לכל אחד
+palettes/    פריסטים של פלטה (scene.palette)
+motions/     פריסטים של תנועה (scene.motion)
+vite.config.js  base יחסי ל Pages, ו plugin פיתוח ששומר פריסטים לתיקיות
 ```
+
+## שמירה וטעינה
+
+שלושה סוגי פריסטים: scene (סצנה שלמה, כולל palette ו motion), palette, motion. כל פריסט הוא קובץ JSON בתיקייה שלו, ושם הקובץ הוא שם הפריסט (אותיות, ספרות, _ ו -).
+
+כל קובץ מתחיל ב `version` וב `type`, ואחריהם השדות של אותו חלק בסצנה. בטעינה, `fromFile` מריץ migrations לפי הגרסה ואז מבצע מיזוג עמוק עם ברירות המחדל: שדה חסר מקבל ברירת מחדל, מערך מוחלף בשלמותו, וערך מסוג שגוי נדחה. לכן פרמטר חדש מוסיפים רק ל `defaultScene`, וקבצים ישנים ממשיכים לעבוד. את `SCHEMA_VERSION` מעלים רק כששדה משנה שם או מקום, ואז מוסיפים פונקציה ל `migrations`.
+
+הטעינה כותבת לתוך אובייקט ה scene הקיים במקום (`assignInPlace`), כי ה controllers של הפאנל מחזיקים הפניות לאובייקטים הפנימיים. אסור להחליף את `scene.motion` או חלקים אחרים באובייקט חדש.
+
+בזמן פיתוח, "שמור" בפאנל שולח POST ל `/__presets`, וה plugin ב vite.config.js כותב לתיקייה בריפו. הכתיבה מוגבלת לשלוש התיקיות, ונדרשת הכותרת `X-Tz-Save`. בבנייה (למשל עם ?debug באתר) השמירה מורידה את הקובץ במקום. הרשימות בפאנל נבנות מ `import.meta.glob`. presets.js מקבל את עצמו ב HMR, כך שקובץ חדש מופיע ברשימה בלי רענון. הקריאה חייבת להיות כתובה מילולית `import.meta.hot.accept()`, אחרת Vite לא מזהה אותה.
+
+כשהפאנל פעיל, המצב הנוכחי נשמר כל שנייה ב localStorage (`tz.current`) ונטען ברענון. "איפוס לברירת מחדל" מוחק את השמירה הזו. גולש בלי הפאנל לא קורא ולא כותב ל localStorage. "ייצוא JSON" מוריד את הסצנה המלאה כגיבוי. "ייבוא JSON" מזהה את סוג הקובץ לפי `type`.
 
 ## דוגמת סצנה
 
 ```json
 {
+  "version": 1,
+  "type": "scene",
   "id": "intro",
   "seed": 42,
-  "shape": { "type": "svgPath", "d": "M0 0 L400 0 L400 400 L0 400 Z", "fit": "center", "scale": 0.6 },
-  "radius": { "min": 2, "max": 12, "sizeMode": "edgeDistance" },
-  "palette": { "space": "oklch", "stops": ["#0b1d51", "#3a6ea5", "#ff6b6b"], "mapBy": "y" },
-  "motion": { "wander": 1.5, "speed": 0.3, "colorShift": 0.1 },
+  "maxCount": 5000,
+  "shape": { "type": "svgPath", "d": "M0 0 L400 0 L400 400 L0 400 Z", "fit": "center", "scale": 0.6, "fillRule": "nonzero" },
+  "radius": { "min": 2, "max": 12, "sizeMode": "edgeDistance", "gap": 0.5, "noiseScale": 0.006 },
+  "palette": { "space": "oklch", "stops": ["#0b1d51", "#3a6ea5", "#ff6b6b"], "mapBy": "y", "background": "#f3efe6" },
+  "motion": {
+    "speed": 1,
+    "pulse": { "amount": 8, "speed": 0.4 },
+    "wander": { "range": 3, "speed": 0.25 },
+    "coherence": 0,
+    "fieldScale": 0.004,
+    "colorShift": 0.1
+  },
   "physics": { "stiffness": 0.08, "damping": 0.88, "collision": 1.0, "mouseRadius": 80 },
   "enter": { "mode": "fromCenter" },
   "exit": { "mode": "disperse", "strength": 1.0 },
@@ -64,7 +95,9 @@ scenes/      קבצי JSON של סצנות
 }
 ```
 
-sizeMode: random, edgeDistance (גדולים בפנים וקטנים בשוליים), noise. מצבי כניסה: fromCenter, fromEdges, random, rain. מצבי יציאה: disperse, explode, drain, noiseField.
+המקור המחייב הוא `defaultScene` ב src/scenes/schema.js.
+
+sizeMode: random, edgeDistance (גדולים בפנים וקטנים בשוליים), noise. mapBy: y, x, radius, edge, radial, random. pulse.amount באחוזים מהרדיוס, wander.range בפיקסלים, coherence מ 0 (כל עיגול לפי הפאזה שלו) עד 1 (שדה noise משותף לפי מיקום). מצבי כניסה: fromCenter, fromEdges, random, rain. מצבי יציאה: disperse, explode, drain, noiseField.
 
 ## עקרונות
 
@@ -75,7 +108,7 @@ sizeMode: random, edgeDistance (גדולים בפנים וקטנים בשולי�
 1. שלד Vite, מאגר עיגולים, מילוי ריבוע ומשולש מ SVG path, רינדור שטוח, פאנל לטווח רדיוסים וספקטרום.
 2. פיזיקה: קפיץ לבית, התנגשויות, עכבר. תנועה פנימית.
 3. שיידר כדור מואר ותזוזת צבע בתוך העיגול.
-4. סצנות JSON: שמירה וטעינה. מצבי כניסה ויציאה, תחילה על ציר זמן לבדיקה.
+4. מצבי כניסה ויציאה, תחילה על ציר זמן לבדיקה. (שמירה וטעינה של JSON כבר בנויה, ראה למעלה.)
 5. סטוריבורד גלילה: סקשנים, מיפוי ScrollTrigger, בדיקת הפיכות.
 6. שכבות טקסט ופריסה ל GitHub Pages.
 
