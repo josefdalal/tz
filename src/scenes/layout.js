@@ -5,19 +5,34 @@
 //                     meta: { bw, bh, s0, rMin, rMax, isImage } }
 //   lx, ly, lr במרחב המקומי, ממורכז, בקנה המידה של הדגימה (s0 פיקסלים ליחידת מקור).
 //
-// טרנספורמציה: world = T(x*W, y*H) · R(rotation) · S(f*flipX, f*flipY) · local
-//   f = (scale * min(W/bw, H/bh)) / s0. כך גם שינוי גודל החלון חי.
+// טרנספורמציה (frame.js מגדיר את האזור הבטוח ואת unit):
+//   world = T(safe.x0 + x*safe.w, safe.y0 + y*safe.h) · R(rotation) · S(f*flipX, f*flipY) · local
+//   f = (scale * min(ref.w/bw, ref.h/bh)) / s0 * unit
+// local בפיקסלי ייחוס בקנה המידה של הדגימה. שינוי גודל החלון, יחס הייחוס או הפריסה: הכול חי.
 
 const DEG = Math.PI / 180;
 
-export function computeTransform(meta, shape, width, height) {
-  const S = shape.scale * Math.min(width / meta.bw, height / meta.bh);
-  const f = S / meta.s0;
-  const cos = Math.cos(shape.rotation * DEG);
-  const sin = Math.sin(shape.rotation * DEG);
-  const sx = f * (shape.flipX ? -1 : 1);
-  const sy = f * (shape.flipY ? -1 : 1);
-  return { a: cos * sx, b: sin * sx, c: -sin * sy, d: cos * sy, e: shape.x * width, f: shape.y * height, scale: f };
+/**
+ * @param meta   geom.meta (bw, bh, s0)
+ * @param layout פריסה פעילה (x, y, rotation, scale, flipX, flipY)
+ * @param safe   safeRect מ frame.js (x0, y0, w, h, unit, ref)
+ */
+export function computeTransform(meta, layout, safe) {
+  const S = layout.scale * Math.min(safe.ref.w / meta.bw, safe.ref.h / meta.bh);
+  const f = (S / meta.s0) * safe.unit;
+  const cos = Math.cos(layout.rotation * DEG);
+  const sin = Math.sin(layout.rotation * DEG);
+  const sx = f * (layout.flipX ? -1 : 1);
+  const sy = f * (layout.flipY ? -1 : 1);
+  return {
+    a: cos * sx,
+    b: sin * sx,
+    c: -sin * sy,
+    d: cos * sy,
+    e: safe.x0 + layout.x * safe.w,
+    f: safe.y0 + layout.y * safe.h,
+    scale: f,
+  };
 }
 
 /** בתים ורדיוסי יעד מהמרחב המקומי, לעיגולים שיש להם בית (i < count). */

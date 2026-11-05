@@ -7,11 +7,12 @@
 import { makeSource, rasterize } from './raster.js';
 import { loadShapeImage } from './images.js';
 import { shapeFiles, isSvgName } from './files.js';
+import { samplingScale } from '../scenes/frame.js';
 
 export const DEBOUNCE_MS = 120;
 
 /**
- * @param {() => {scene: object, width: number, height: number}} getState
+ * @param {() => {scene: object}} getState
  * @param {(geom: object) => void} onResult
  * @param {(state: string) => void} onStatus 'idle' | 'busy' | 'שגיאה: ...'
  */
@@ -49,14 +50,14 @@ export function createSampler(getState, onResult, onStatus) {
     busy = true;
     const id = ++seq;
     try {
-      const { scene, width, height } = getState();
+      const { scene } = getState();
       const shape = scene.shape;
       const image = await loadImage(shape);
       const source = makeSource(shape, image);
       if (!source) throw new Error('אין מקור צורה תקין');
 
-      // קנה המידה של הדגימה: הקנה הנוכחי. אחר כך הוא משתנה חי בלי דגימה.
-      const s0 = shape.scale * Math.min(width / source.bb.w, height / source.bb.h);
+      // קנה המידה של הדגימה, בפיקסלי ייחוס לפי פריסת landscape. כל מסך ופריסה אחרים: טרנספורמציה חיה.
+      const s0 = samplingScale(scene, source.bb);
       const key = `${source.key}|${s0.toFixed(5)}`;
       const params = {
         isImage: source.isImage,

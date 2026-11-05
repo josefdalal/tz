@@ -2,6 +2,7 @@ import GUI from 'lil-gui';
 import { shapes } from '../shapes/library.js';
 import { sizeModes, mapByModes, maskByModes, KINDS } from '../scenes/schema.js';
 import { MAX_POOL } from '../sim/particles.js';
+import { referenceOptions, previewOptions } from '../scenes/frame.js';
 
 export const guiEnabled = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 
@@ -33,7 +34,8 @@ function tagFolder(folder, kind) {
 /**
  * פאנל שליטה. מופיע רק במצב פיתוח או עם ?debug.
  * hooks.onGeometry:  פרמטר גיאומטריה השתנה (דגימה ב worker, עם debounce)
- * hooks.onTransform: מיקום, סיבוב, קנה מידה, היפוך (חי)
+ * hooks.onTransform: יחס ייחוס השתנה (חי)
+ * hooks.layout: state(), set(key, value), resetPortrait(), editor, onEditor (חי)
  * hooks.onColors:    mapBy, צבע מהתמונה (חי)
  * hooks.onPalette, hooks.onBackground (חי)
  * hooks.presets, hooks.shapeFiles { names, onChange, upload(local) }, hooks.bake { bake, unbake }
@@ -41,7 +43,7 @@ function tagFolder(folder, kind) {
  */
 export function createGui(scene, stats, hooks) {
   if (!guiEnabled) return null;
-  const { onGeometry, onTransform, onColors, onPalette, onBackground, presets, shapeFiles, bake } = hooks;
+  const { onGeometry, onTransform, layout, onColors, onPalette, onBackground, presets, shapeFiles, bake } = hooks;
 
   const style = document.createElement('style');
   style.textContent = CSS;
@@ -168,14 +170,35 @@ export function createGui(scene, stats, hooks) {
   fRadius.add(scene.radius, 'gap', 0, 6, 0.1).name('מרווח').onChange(onGeometry);
   fRadius.add(scene.radius, 'noiseScale', 0.001, 0.03, 0.0005).name('סקאלת noise').onChange(onGeometry);
 
-  // טרנספורמציה (חי)
-  const fTransform = tagFolder(gui.addFolder('טרנספורמציה'), 'live');
-  fTransform.add(sh, 'x', 0, 1, 0.001).name('מיקום x').onChange(onTransform);
-  fTransform.add(sh, 'y', 0, 1, 0.001).name('מיקום y').onChange(onTransform);
-  fTransform.add(sh, 'rotation', -180, 180, 0.5).name('סיבוב').onChange(onTransform);
-  fTransform.add(sh, 'scale', 0.05, 2, 0.01).name('קנה מידה').onChange(onTransform);
-  fTransform.add(sh, 'flipX').name('היפוך אופקי').onChange(onTransform);
-  fTransform.add(sh, 'flipY').name('היפוך אנכי').onChange(onTransform);
+  // מסגרת (חי): יחס ייחוס, ותצוגה מקדימה של יחסי מסך (הגדרת עורך, לא חלק מהסצנה)
+  const fFrame = tagFolder(gui.addFolder('מסגרת'), 'live');
+  fFrame.add(scene.frame, 'reference', referenceOptions).name('יחס ייחוס').onChange(onTransform);
+  fFrame.add(layout.editor, 'preview', Object.keys(previewOptions)).name('תצוגה מקדימה').onChange(layout.onEditor);
+  fFrame.add(layout.editor, 'showSafe').name('אזור בטוח').onChange(layout.onEditor);
+
+  // פריסה (חי): עורכים את הפריסה הפעילה, לפי הכיוון של התצוגה
+  const fLayout = tagFolder(gui.addFolder('פריסה'), 'live');
+  const layoutUi = { active: '', x: 0.5, y: 0.5, rotation: 0, scale: 0.6, flipX: false, flipY: false };
+  fLayout.add(layoutUi, 'active').name('פריסה פעילה').disable();
+  const setL = (k) => (v) => layout.set(k, v);
+  fLayout.add(layoutUi, 'x', -0.5, 1.5, 0.001).name('מיקום x').onChange(setL('x'));
+  fLayout.add(layoutUi, 'y', -0.5, 1.5, 0.001).name('מיקום y').onChange(setL('y'));
+  fLayout.add(layoutUi, 'rotation', -180, 180, 0.5).name('סיבוב').onChange(setL('rotation'));
+  fLayout.add(layoutUi, 'scale', 0.05, 2, 0.01).name('קנה מידה').onChange(setL('scale'));
+  fLayout.add(layoutUi, 'flipX').name('היפוך אופקי').onChange(setL('flipX'));
+  fLayout.add(layoutUi, 'flipY').name('היפוך אנכי').onChange(setL('flipY'));
+  const resetPortraitBtn = fLayout
+    .add({ go: () => run(async () => { const m = layout.resetPortrait(); syncLayout(); return m; }) }, 'go')
+    .name('portrait: חזרה לנגזר');
+
+  function syncLayout() {
+    const s = layout.state();
+    layoutUi.active = s.orientation === 'portrait' ? (s.derived ? 'portrait (נגזר מ landscape)' : 'portrait') : 'landscape';
+    for (const k of Object.keys(s.values)) if (k in layoutUi) layoutUi[k] = s.values[k];
+    resetPortraitBtn.enable(s.orientation === 'portrait' && !s.derived);
+    for (const c of fLayout.controllers) c.updateDisplay();
+  }
+  syncLayout();
 
   // ספקטרום (חי)
   const fPalette = tagFolder(gui.addFolder('ספקטרום'), 'live');
@@ -251,6 +274,7 @@ export function createGui(scene, stats, hooks) {
     syncImageFolder();
     buildStops();
     syncLock();
+    syncLayout();
     refreshAll();
   }
   syncImageFolder();
@@ -258,6 +282,7 @@ export function createGui(scene, stats, hooks) {
 
   return {
     refresh,
+    syncLayout,
     status: (s) => { ui.status = s; },
   };
 }

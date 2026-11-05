@@ -28,8 +28,10 @@ function reseedMotion(m, seed) {
 /**
  * כותב לתוך p.offX, p.offY (היסט בפיקסלים מנקודת הבית) ו p.pulse (מכפיל רדיוס).
  * @param {object} cfg scene.motion
+ * @param {number} unit פיקסלי מסך לפיקסל ייחוס (frame.js): טווח הנדידה והשדה המשותף
+ *                      מוגדרים בפיקסלי ייחוס, כך שהתנועה נראית אותו דבר בכל גודל מסך
  */
-export function updateMotion(m, p, cfg, seed, dt) {
+export function updateMotion(m, p, cfg, seed, dt, unit = 1) {
   if (seed !== m.seed) reseedMotion(m, seed);
 
   const speed = cfg.speed;
@@ -39,9 +41,9 @@ export function updateMotion(m, p, cfg, seed, dt) {
   const c = Math.min(1, Math.max(0, cfg.coherence));
   const wi = 1 - c;
   const norm = 1 / Math.sqrt(wi * wi + c * c); // שני noise בלתי תלויים: שומר על סטיית התקן
-  const range = cfg.wander.range;
+  const range = cfg.wander.range * unit;
   const amount = cfg.pulse.amount / 100;
-  const s = cfg.fieldScale;
+  const s = cfg.fieldScale / (unit || 1);
   const tw = m.wanderClock;
   const tp = m.pulseClock * TAU;
   const n3 = m.noise3D;

@@ -12,6 +12,8 @@ import { createSampler } from './shapes/sampling.js';
 import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName } from './shapes/files.js';
 import { defaultScene, KINDS, toFile, fromFile, geometryKey } from './scenes/schema.js';
 import { computeTransform, layoutHomes, applyTransformDelta, layoutColors } from './scenes/layout.js';
+import { orientationOf, safeRect, resolveLayout, containRect, previewOptions, LAYOUT_KEYS } from './scenes/frame.js';
+import { createFrameOverlay } from './ui/frameOverlay.js';
 import { bakeGeometry, unbakeGeometry } from './scenes/bake.js';
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
 import { loadLocal, saveLocal, clearLocal, downloadJSON, pickJSONFile, pickFile } from './scenes/persist.js';
@@ -47,6 +49,34 @@ const stats = { count: 0, pool: particles.capacity, sampling: '', sampleMs: 0, f
 const motion = createMotion(scene.seed);
 renderer.resize(width, height);
 
+// ---------- מסגרת ופריסה ----------
+// view: המסגרת שבה הסצנה מוצגת. בדרך כלל כל החלון; בעורך אפשר לדמות יחס אחר.
+// הכיוון (landscape או portrait) נקבע לפי היחס של view, ולפיו נבחרת הפריסה.
+
+const editor = { preview: 'חלון', showSafe: true };
+let view = { x0: 0, y0: 0, w: width, h: height };
+let orientation = 'landscape';
+let safe = null;
+
+function updateFrame() {
+  const aspect = previewOptions[editor.preview];
+  view = aspect ? containRect(aspect, width, height) : { x0: 0, y0: 0, w: width, h: height };
+  orientation = orientationOf(view);
+  safe = safeRect(scene.frame, orientation, view);
+  overlay?.update(view, safe, {
+    width,
+    height,
+    showSafe: editor.showSafe,
+    simulated: !!aspect,
+    background: scene.palette.background,
+    text: `${orientation}${orientation === 'portrait' && !scene.layouts.portrait ? ' (נגזר)' : ''} · ייחוס ${scene.frame.reference}`,
+  });
+}
+
+const activeLayout = () => resolveLayout(scene, orientation);
+const overlay = guiEnabled ? createFrameOverlay() : null;
+updateFrame();
+
 // ---------- גיאומטריה ----------
 
 let geom = null; // הגיאומטריה הנוכחית במרחב המקומי
@@ -57,7 +87,7 @@ let geomVersion = 0;
 function applyGeometry(g) {
   geom = g;
   geomVersion++;
-  const nextT = computeTransform(g.meta, scene.shape, width, height);
+  const nextT = computeTransform(g.meta, activeLayout(), safe);
   if (retarget(particles, g, nextT, poolRng, width, height)) renderer.rebind();
   T = nextT;
   layoutHomes(particles, T);
@@ -67,7 +97,7 @@ function applyGeometry(g) {
 }
 
 const sampler = createSampler(
-  () => ({ scene, width, height }),
+  () => ({ scene }),
   (g) => {
     if (scene.baked) return; // נאפה בזמן שהדגימה רצה
     stats.sampleMs = Math.round(g.ms);
@@ -100,12 +130,39 @@ function loadGeometry() {
 
 // ---------- חי ----------
 
+/** פריסה, יחס ייחוס, תצוגה מקדימה או גודל חלון השתנו: טרנספורמציה חיה בלבד. */
 function onTransform() {
+  const prevOrientation = orientation;
+  updateFrame();
+  if (orientation !== prevOrientation) gui?.syncLayout();
   if (!geom) return;
-  const nextT = computeTransform(geom.meta, scene.shape, width, height);
+  const nextT = computeTransform(geom.meta, activeLayout(), safe);
   applyTransformDelta(particles, T, nextT);
   T = nextT;
 }
+
+// עריכה של הפריסה הפעילה. portrait נגזר הופך לפריסה עצמאית בעריכה הראשונה שלו.
+const layoutHooks = {
+  state: () => ({ orientation, derived: orientation === 'portrait' && !scene.layouts.portrait, values: activeLayout() }),
+  set(key, value) {
+    const materialize = orientation === 'portrait' && !scene.layouts.portrait;
+    if (materialize) {
+      scene.layouts.portrait = Object.fromEntries(LAYOUT_KEYS.map((k) => [k, scene.layouts.landscape[k]]));
+    }
+    scene.layouts[orientation][key] = value;
+    onTransform();
+    if (materialize) gui?.syncLayout();
+  },
+  resetPortrait() {
+    if (!scene.layouts.portrait) return 'portrait כבר נגזר מ landscape';
+    scene.layouts.portrait = null;
+    onTransform();
+    gui?.syncLayout();
+    return 'portrait חזר להיות נגזר';
+  },
+  editor,
+  onEditor: () => onTransform(),
+};
 
 function applyColors() {
   if (!geom) return;
@@ -115,7 +172,10 @@ function applyColors() {
 }
 
 const applyPalette = () => renderer.setPalette(scene.palette.stops, scene.palette.space);
-const applyBackground = () => renderer.setBackground(scene.palette.background);
+const applyBackground = () => {
+  renderer.setBackground(scene.palette.background);
+  updateFrame(); // הכיסוי מחוץ למסגרת המדומה בצבע הרקע
+};
 applyPalette();
 applyBackground();
 
@@ -221,6 +281,7 @@ const shapeFileHooks = {
 const gui = createGui(scene, stats, {
   onGeometry: () => onGeometry(),
   onTransform,
+  layout: layoutHooks,
   onColors: applyColors,
   onPalette: applyPalette,
   onBackground: applyBackground,
@@ -267,7 +328,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
-  updateMotion(motion, particles, scene.motion, scene.seed, dt);
+  updateMotion(motion, particles, scene.motion, scene.seed, dt, safe.unit);
   relax(particles, dt);
   renderer.render();
 

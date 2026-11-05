@@ -3,24 +3,27 @@ import { deepMerge, clone } from '../util/merge.js';
 
 // גרסת מבנה הקבצים. כשמשנים מבנה באופן שמיזוג עם ברירות מחדל לא מספיק
 // (שינוי שם או העברת שדה), מעלים את הגרסה ומוסיפים פונקציה ל migrations.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+const LAYOUT_KEYS = ['x', 'y', 'rotation', 'scale', 'flipX', 'flipY'];
 
 export const defaultScene = {
   id: 'intro',
   seed: 42,
   maxCount: 5000,
+  // יחס הייחוס שבו מעצבים. המסגרת עצמה היא תמיד כל ה viewport (frame.js).
+  frame: { reference: '16:9' },
+  // פריסות: רק טרנספורמציה, הגיאומטריה משותפת. portrait null: נגזר מ landscape.
+  // x, y: 0 עד 1 על פני האזור הבטוח. scale: יחסית להתאמה לצלע הקצרה של הייחוס.
+  layouts: {
+    landscape: { x: 0.5, y: 0.5, rotation: 0, scale: 0.6, flipX: false, flipY: false },
+    portrait: null,
+  },
   shape: {
     type: 'svgPath', // svgPath: צורה מ d. image: קובץ מהתיקייה shapes (SVG, PNG, JPG)
     d: shapes.square,
     fillRule: 'nonzero',
     src: '', // שם קובץ בתיקייה shapes, כש type הוא image
-    // טרנספורמציה: מרכז הצורה יחסית למסך, סיבוב במעלות, קנה מידה יחסית לצלע הקצרה
-    x: 0.5,
-    y: 0.5,
-    rotation: 0,
-    scale: 0.6,
-    flipX: false,
-    flipY: false,
     image: {
       maskBy: 'alpha', // alpha או luminance (כהה בפנים)
       threshold: 0.5,
@@ -30,6 +33,7 @@ export const defaultScene = {
       colorMix: 0, // 0 צבע מהספקטרום, 1 צבע מהתמונה
     },
   },
+  // רדיוסים ומרווח בפיקסלי ייחוס (1920 בצלע הארוכה), מוכפלים ב unit לפי גודל המסך
   radius: { min: 2, max: 12, sizeMode: 'edgeDistance', gap: 0.5, noiseScale: 0.006 },
   palette: {
     space: 'oklch',
@@ -40,7 +44,7 @@ export const defaultScene = {
   motion: {
     speed: 1, // מכפיל כללי לכל מהירויות התנועה
     pulse: { amount: 8, speed: 0.4 }, // amount באחוזים מהרדיוס, speed במחזורים לשנייה
-    wander: { range: 3, speed: 0.25 }, // range בפיקסלים, speed ביחידות זמן של noise לשנייה
+    wander: { range: 3, speed: 0.25 }, // range בפיקסלי ייחוס, speed ביחידות זמן של noise לשנייה
     coherence: 0, // 0 כל עיגול לפי הפאזה שלו, 1 שדה noise משותף לפי מיקום
     fieldScale: 0.004, // סקאלת השדה המשותף (קטן יותר: אזורים גדולים יותר שזזים יחד)
     colorShift: 0.1, // שלב 3
@@ -89,8 +93,25 @@ export const KINDS = {
   motion: { folder: 'motions', label: 'תנועה', defaults: () => defaultScene.motion },
 };
 
-// migrations[kind][v] ממיר נתונים מגרסה v לגרסה v+1. כרגע אין.
-const migrations = { scene: {}, palette: {}, motion: {} };
+// migrations[kind][v] ממיר נתונים מגרסה v לגרסה v+1.
+const migrations = {
+  scene: {
+    // 1 אל 2: הטרנספורמציה עברה מ shape אל layouts.landscape. אפייה ישנה נשמרת כמו שהיא
+    // (s0 שלה היה בפיקסלי מסך, ולכן הגודל שלה עשוי לזוז מעט).
+    1: (data) => {
+      const shape = data.shape ?? {};
+      const landscape = {};
+      for (const k of LAYOUT_KEYS) {
+        if (k in shape) landscape[k] = shape[k];
+        delete shape[k];
+      }
+      delete shape.fit;
+      return { ...data, shape, layouts: { landscape, portrait: null } };
+    },
+  },
+  palette: {},
+  motion: {},
+};
 
 /** נתונים חיים אל מבנה קובץ: version ו type בראש, ואחריהם השדות. */
 export function toFile(kind, data) {
