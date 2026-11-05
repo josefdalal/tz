@@ -398,7 +398,12 @@ export function createGui(scene, stats, hooks) {
       f.domElement.classList.toggle('tz-locked', locked);
       for (const c of f.controllersRecursive()) c.enable(!locked);
     }
-    bakeUi.state = locked ? `אפויה (${scene.baked.circles.length} עיגולים)` : 'חיה מהמקור';
+    const b = scene.baked;
+    bakeUi.state = locked
+      ? b.file
+        ? `אפויה: baked/${b.file} (${b.count} עיגולים)`
+        : `אפויה בפורמט הישן (${b.circles.length} עיגולים)`
+      : 'חיה מהמקור';
     bakeBtn.enable(!locked);
     unbakeBtn.enable(locked);
   }

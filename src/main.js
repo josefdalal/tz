@@ -16,7 +16,7 @@ import { computeTransform, layoutHomes, applyTransformDelta, layoutColors } from
 import { orientationOf, safeRect, resolveLayout, containRect, previewOptions, LAYOUT_KEYS } from './scenes/frame.js';
 import { createFrameOverlay } from './ui/frameOverlay.js';
 import { createTransitionMode } from './transitions/mode.js';
-import { bakeGeometry, unbakeGeometry } from './scenes/bake.js';
+import { bakedFiles, bakeToBytes, bytesToGeometry, loadBakedGeometry, saveBakedFile, primeBaked } from './scenes/bakedFiles.js';
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
 import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from './scenes/persist.js';
 import { createRenderer } from './render/renderer.js';
@@ -143,12 +143,26 @@ function onGeometry({ force = false } = {}) {
   sampler.request();
 }
 
+// טעינת סצנה אפויה היא אסינכרונית (קובץ baked/*.tzb). רק הבקשה האחרונה מוחלת.
+let bakedToken = 0;
 function loadGeometry() {
   if (scene.baked) {
     lastGeomKey = null;
-    stats.sampling = 'אפוי';
-    applyGeometry(unbakeGeometry(scene.baked));
+    stats.sampling = 'טוען אפייה...';
+    const token = ++bakedToken;
+    const baked = scene.baked;
+    loadBakedGeometry(baked)
+      .then((g) => {
+        if (token !== bakedToken || scene.baked !== baked) return;
+        stats.sampling = 'אפוי';
+        applyGeometry(g);
+      })
+      .catch((e) => {
+        stats.sampling = 'שגיאה';
+        gui?.status(`שגיאה בטעינת אפייה: ${e.message}`);
+      });
   } else {
+    bakedToken++;
     onGeometry({ force: true });
   }
 }
@@ -270,12 +284,24 @@ const sourceAvailable = () =>
   scene.shape.type === 'image' ? !!shapeFiles[scene.shape.src] : !!scene.shape.d;
 
 const bake = {
-  bake() {
+  // האפייה נשמרת כקובץ בינארי ב baked/<שם הסצנה>.tzb, והסצנה מפנה אליו.
+  // הגיאומטריה מוחלפת בזו שפוענחה מהקובץ, כך שמה שרואים בעורך זהה בדיוק למה שהנגן יטען.
+  async bake() {
     if (scene.baked) return 'כבר אפוי';
     if (!geom || sampler.isBusy()) throw new Error('הדגימה עדיין רצה, נסה שוב בעוד רגע');
-    scene.baked = bakeGeometry(geom);
+    const name = normalizeName(scene.id) ?? 'scene';
+    if (bakedFiles[`${name}.tzb`] && !confirm(`baked/${name}.tzb כבר קיים. לדרוס?`)) return 'בוטל';
+    const bytes = await bakeToBytes(geom);
+    const decoded = await bytesToGeometry(bytes);
+    const { file, persisted } = await saveBakedFile(name, bytes);
+    primeBaked(file, decoded);
+    scene.baked = { file, count: decoded.count };
     stats.sampling = 'אפוי';
-    return `נאפו ${geom.count} עיגולים`;
+    applyGeometry(decoded);
+    const kb = (bytes.length / 1024).toFixed(1);
+    return persisted
+      ? `נאפו ${decoded.count} עיגולים אל baked/${file} (${kb}KB)`
+      : `נאפו ${decoded.count} עיגולים; הקובץ ${file} ירד (אין שרת פיתוח), יש לשים אותו ב baked/`;
   },
   unbake() {
     if (!scene.baked) return 'לא אפוי';

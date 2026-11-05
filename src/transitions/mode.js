@@ -9,7 +9,7 @@ import { gsap } from 'gsap';
 import { interpolate, formatHex } from 'culori';
 import { fromFile, defaultTransitionStyle, defaultScroll } from '../scenes/schema.js';
 import { registry, savePreset, normalizeName } from '../scenes/presets.js';
-import { unbakeGeometry } from '../scenes/bake.js';
+import { loadBakedGeometry } from '../scenes/bakedFiles.js';
 import { computeTransform } from '../scenes/layout.js';
 import { safeRect, resolveLayout } from '../scenes/frame.js';
 import { sampleOnce } from '../shapes/sampling.js';
@@ -97,7 +97,7 @@ export function createTransitionMode(deps) {
     if (!file) throw new Error(`סצנה לא נמצאה: ${name}`);
     const scene = fromFile(file, 'scene').data;
     // סצנה לא אפויה נדגמת פעם אחת בכניסה למצב
-    const geom = scene.baked ? unbakeGeometry(scene.baked) : await sampleOnce(scene);
+    const geom = scene.baked ? await loadBakedGeometry(scene.baked) : await sampleOnce(scene);
     return { scene, geom };
   }
 

@@ -1,35 +1,15 @@
-// אפייה: הגיאומטריה האחרונה נשמרת בתוך הסצנה כטבלת עיגולים במרחב המקומי.
+// קריאה של הפורמט הישן של אפייה (JSON בתוך הסצנה), כדי שסצנות שנאפו לפני הפורמט הבינארי
+// (bakedFormat.js) ימשיכו להיטען. tools/convert-baked.mjs ממיר אותן. אפייה חדשה נכתבת
+// תמיד ל baked/*.tzb.
 //
+// הפורמט הישן:
 // scene.baked = {
 //   meta:   { bw, bh, s0, rMin, rMax, isImage },
 //   fields: ["x", "y", "r", "edge", "rand", "rgb"],
 //   circles: [[x, y, r, edge, rand, "#rrggbb" | null], ...]
 // }
-// הפורמט מתאר את עצמו (fields), כך שאפשר להוסיף שדות לכל עיגול בעתיד (למשל id, נעילה,
-// צבע ידני) בלי לשבור קבצים קיימים, ולערוך עיגול בודד לפי האינדקס שלו.
 
 export const BAKED_FIELDS = ['x', 'y', 'r', 'edge', 'rand', 'rgb'];
-
-const round = (v, n) => Math.round(v * n) / n;
-const hex2 = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
-
-export function bakeGeometry(geom) {
-  const circles = new Array(geom.count);
-  for (let i = 0; i < geom.count; i++) {
-    const rgb = geom.rgb
-      ? `#${hex2(geom.rgb[i * 3])}${hex2(geom.rgb[i * 3 + 1])}${hex2(geom.rgb[i * 3 + 2])}`
-      : null;
-    circles[i] = [
-      round(geom.lx[i], 100),
-      round(geom.ly[i], 100),
-      round(geom.lr[i], 100),
-      round(geom.edge[i], 1000),
-      round(geom.rand[i], 1000),
-      rgb,
-    ];
-  }
-  return { meta: { ...geom.meta }, fields: [...BAKED_FIELDS], circles };
-}
 
 export function unbakeGeometry(baked) {
   const fields = baked.fields ?? BAKED_FIELDS;

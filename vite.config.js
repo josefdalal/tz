@@ -6,6 +6,7 @@ const PRESET_FOLDERS = ['scenes', 'palettes', 'motions', 'transitions', 'transit
 const PRESET_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}$/u;
 // local/ אופציונלי: shapes/local לתמונות ניסיון, ב .gitignore
 const SHAPE_NAME_RE = /^(local\/)?[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}\.(svg|png|jpg|jpeg|webp)$/u;
+const BAKED_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}\.tzb$/u;
 const MAX_JSON = 1024 * 1024;
 const MAX_SHAPE = 20 * 1024 * 1024;
 
@@ -41,27 +42,52 @@ function safePath(root, folder, file) {
 // בזמן פיתוח בלבד: שמירה ישירה לריפו מהפאנל.
 //   POST /__presets  JSON {folder, name, data}  אל scenes/ palettes/ motions/
 //   POST /__shapes   גוף בינארי, שם בכותרת X-Tz-Name  אל shapes/
+//   POST /__baked    גוף בינארי (.tzb), שם בכותרת X-Tz-Name  אל baked/
 // הכתיבה מוגבלת לתיקיות האלה ולשמות קבצים פשוטים. הכותרת X-Tz-Save מחייבת preflight,
 // כך שאתר אחר בדפדפן לא יכול לשלוח בקשה כזו לשרת המקומי.
 function savePlugin() {
-  let shapesDir = '';
-  let filesModuleId = '';
+  // תיקיית assets עם ?url אל המודול שמחזיק את המאגר שלה (ראה hotUpdate)
+  let assetDirs = [];
   return {
     name: 'tz-save',
     apply: 'serve',
     configResolved(config) {
-      shapesDir = normalizePath(path.resolve(config.root, 'shapes')) + '/';
-      filesModuleId = normalizePath(path.resolve(config.root, 'src/shapes/files.js'));
+      const dir = (d) => normalizePath(path.resolve(config.root, d)) + '/';
+      const mod = (m) => normalizePath(path.resolve(config.root, m));
+      assetDirs = [
+        { dir: dir('shapes'), module: mod('src/shapes/files.js') },
+        { dir: dir('baked'), module: mod('src/scenes/bakedFiles.js') },
+      ];
     },
-    // קובץ תמונה שנדרס ב shapes/ גורם כברירת מחדל לרענון מלא (ל asset עם ?url אין גבול HMR).
-    // מפנים את העדכון ל files.js, שמקבל את עצמו ומייצר כתובות חדשות.
+    // קובץ שנדרס בתיקיית assets גורם כברירת מחדל לרענון מלא (ל asset עם ?url אין גבול HMR).
+    // מפנים את העדכון למודול המאגר, שמקבל את עצמו ומייצר כתובות חדשות.
     hotUpdate({ file }) {
-      if (this.environment.name !== 'client' || !normalizePath(file).startsWith(shapesDir)) return;
-      const mod = this.environment.moduleGraph.getModuleById(filesModuleId);
-      return mod ? [mod] : [];
+      if (this.environment.name !== 'client') return;
+      const hit = assetDirs.find((a) => normalizePath(file).startsWith(a.dir));
+      if (!hit) return;
+      const m = this.environment.moduleGraph.getModuleById(hit.module);
+      return m ? [m] : [];
     },
     configureServer(server) {
       const root = server.config.root;
+
+      server.middlewares.use('/__baked', async (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        if (req.headers['x-tz-save'] !== '1') return reply(res, 403, { error: 'missing header' });
+        try {
+          const name = decodeURIComponent(String(req.headers['x-tz-name'] ?? ''));
+          if (!BAKED_NAME_RE.test(name)) return reply(res, 400, { error: `שם קובץ לא תקין: ${name}` });
+          const body = await readBody(req, MAX_SHAPE);
+          if (body.length === 0) return reply(res, 400, { error: 'קובץ ריק' });
+          const p = safePath(root, 'baked', name);
+          if (!p) return reply(res, 400, { error: 'נתיב לא תקין' });
+          await mkdir(p.dir, { recursive: true });
+          await writeFile(p.full, body);
+          reply(res, 200, { ok: true, path: `baked/${name}`, bytes: body.length });
+        } catch (e) {
+          reply(res, 500, { error: e.message });
+        }
+      });
 
       server.middlewares.use('/__presets', async (req, res, next) => {
         if (req.method !== 'POST') return next();
