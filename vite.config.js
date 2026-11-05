@@ -130,8 +130,19 @@ function savePlugin() {
 }
 
 // base יחסי כדי שהבנייה תעבוד גם תחת נתיב המשנה של GitHub Pages
+// שני עמודים על אותו מנוע (src/engine/stage.js):
+//   index.html  הנגן, מה שהגולש רואה. בלי פאנל ובלי worker.
+//   editor.html העורך.
 export default defineConfig({
   base: './',
   plugins: [savePlugin()],
   worker: { format: 'es' },
+  build: {
+    rolldownOptions: {
+      input: {
+        player: path.resolve(import.meta.dirname, 'index.html'),
+        editor: path.resolve(import.meta.dirname, 'editor.html'),
+      },
+    },
+  },
 });

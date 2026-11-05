@@ -7,8 +7,6 @@ import {
   easeOptions, matchingModes, pathModes, arcDirections, orderModes,
 } from '../transitions/mode.js';
 
-export const guiEnabled = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
-
 const MAX_STOPS = 6;
 
 // סימון קבוצות: ירוק חי (בלי חישוב), כתום דגימה (מחשב ב worker), אפור נעול (אפוי)
@@ -35,7 +33,7 @@ function tagFolder(folder, kind) {
 }
 
 /**
- * פאנל שליטה. מופיע רק במצב פיתוח או עם ?debug.
+ * פאנל השליטה של העורך (editor.html). הנגן (index.html) לא טוען אותו.
  * hooks.onGeometry:  פרמטר גיאומטריה השתנה (דגימה ב worker, עם debounce)
  * hooks.onTransform: יחס ייחוס השתנה (חי)
  * hooks.layout: state(), set(key, value), resetPortrait(), editor, onEditor (חי)
@@ -45,7 +43,6 @@ function tagFolder(folder, kind) {
  * מחזיר { refresh, status } או null כשהפאנל כבוי.
  */
 export function createGui(scene, stats, hooks) {
-  if (!guiEnabled) return null;
   const { onGeometry, onTransform, layout, onColors, onPalette, onBackground, presets, shapeFiles, bake, exporter } = hooks;
 
   const style = document.createElement('style');

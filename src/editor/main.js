@@ -1,39 +1,34 @@
-// חיבור המערכות. שני מסלולים נפרדים:
+// העורך (editor.html). המנוע עצמו ב src/engine/stage.js, משותף עם הנגן.
+// כאן כל מה ששייך לכלי: פאנל, worker לדגימה, פריסטים, אפייה, מצב מעבר, ייצוא, שמירה אוטומטית.
+//
+// שני מסלולים נפרדים:
 //   גיאומטריה: פרמטר דגימה השתנה, נשלחת בקשה ל worker (debounce). התוצאה (במרחב המקומי)
 //              מוחלפת עם התאמה מרחבית (match.js): העיגולים זורמים לבתים קרובים.
 //   חי:        טרנספורמציה, צבע, תנועה, רקע. מחושבים מהגיאומטריה הקיימת, בלי דגימה.
 // סצנה אפויה (scene.baked) משמשת כגיאומטריה במקום ה worker.
 
-import { createParticles, growParticles, setImageMix, MAX_POOL } from './sim/particles.js';
-import { createPhysics, stepPhysics } from './sim/physics.js';
-import { framePNG, frameSVG } from './render/export.js';
-import { createMotion, updateMotion } from './sim/motion.js';
-import { retarget } from './sim/match.js';
-import { createSampler } from './shapes/sampling.js';
-import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName } from './shapes/files.js';
-import { defaultScene, KINDS, toFile, fromFile, geometryKey } from './scenes/schema.js';
-import { computeTransform, layoutHomes, applyTransformDelta, layoutColors } from './scenes/layout.js';
-import { orientationOf, safeRect, resolveLayout, containRect, previewOptions, LAYOUT_KEYS } from './scenes/frame.js';
-import { createFrameOverlay } from './ui/frameOverlay.js';
-import { createTransitionMode } from './transitions/mode.js';
-import { bakedFiles, bakeToBytes, bytesToGeometry, loadBakedGeometry, saveBakedFile, primeBaked } from './scenes/bakedFiles.js';
-import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
-import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from './scenes/persist.js';
-import { createRenderer } from './render/renderer.js';
-import { createGui, guiEnabled } from './ui/gui.js';
-import { assignInPlace, clone } from './util/merge.js';
-import { mulberry32 } from './util/rng.js';
+import { createStage } from '../engine/stage.js';
+import { framePNG, frameSVG } from '../render/export.js';
+import { createSampler } from '../shapes/sampling.js';
+import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName } from '../shapes/files.js';
+import { defaultScene, KINDS, toFile, fromFile, geometryKey } from '../scenes/schema.js';
+import { previewOptions, LAYOUT_KEYS } from '../scenes/frame.js';
+import { createFrameOverlay } from '../ui/frameOverlay.js';
+import { createTransitionMode } from '../transitions/mode.js';
+import { bakedFiles, bakeToBytes, bytesToGeometry, loadBakedGeometry, saveBakedFile, primeBaked } from '../scenes/bakedFiles.js';
+import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from '../scenes/presets.js';
+import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from '../scenes/persist.js';
+import { createGui } from '../ui/gui.js';
+import { assignInPlace, clone } from '../util/merge.js';
 
-// מצב התחלתי: בפאנל, המצב האחרון מ localStorage; אחרת ברירת המחדל
+// מצב התחלתי: המצב האחרון מ localStorage, אחרת ברירת המחדל
 function initialScene() {
-  if (guiEnabled) {
-    const saved = loadLocal();
-    if (saved) {
-      try {
-        return fromFile(saved, 'scene').data;
-      } catch (e) {
-        console.warn('[tz] מצב שמור לא תקין, נטענת ברירת מחדל', e);
-      }
+  const saved = loadLocal();
+  if (saved) {
+    try {
+      return fromFile(saved, 'scene').data;
+    } catch (e) {
+      console.warn('[tz] מצב שמור לא תקין, נטענת ברירת מחדל', e);
     }
   }
   return clone(defaultScene);
@@ -41,84 +36,37 @@ function initialScene() {
 
 const canvas = document.getElementById('stage');
 const scene = initialScene();
-let width = window.innerWidth;
-let height = window.innerHeight;
-const poolRng = mulberry32(scene.seed + 1);
-const particles = createParticles();
-growParticles(particles, Math.min(MAX_POOL, scene.maxCount), poolRng, width, height);
-const renderer = createRenderer(canvas, particles);
-const stats = { count: 0, pool: particles.capacity, sampling: '', sampleMs: 0, physicsMs: 0, fps: 0 };
-const motion = createMotion(scene.seed);
-const physics = createPhysics();
-renderer.resize(width, height);
-
-// מצביע (עכבר או מגע) כגוף פיזי. רק מעל הקנבס: מעל הפאנל הוא לא דוחף.
-// עכבר: פעיל בזמן ריחוף. מגע: פעיל רק בזמן לחיצה. touch-action none כדי שהגרירה לא תגלול;
-// בשלב הסטוריבורד (גלילה) זה ייבחן מחדש.
-canvas.style.touchAction = 'none';
-const pointer = physics.pointer;
-const onPointer = (e) => {
-  const overCanvas = e.target === canvas;
-  if (e.pointerType === 'touch') {
-    pointer.active = overCanvas && e.type !== 'pointerup' && (e.type === 'pointerdown' || pointer.active);
-  } else {
-    pointer.active = overCanvas;
-  }
-  pointer.x = e.clientX;
-  pointer.y = e.clientY;
-};
-for (const type of ['pointermove', 'pointerdown', 'pointerup']) window.addEventListener(type, onPointer, { passive: true });
-for (const type of ['pointercancel', 'pointerleave', 'blur']) {
-  window.addEventListener(type, () => { pointer.active = false; }, { passive: true });
-}
-document.documentElement.addEventListener('pointerleave', () => { pointer.active = false; });
-
-// ---------- מסגרת ופריסה ----------
-// view: המסגרת שבה הסצנה מוצגת. בדרך כלל כל החלון; בעורך אפשר לדמות יחס אחר.
-// הכיוון (landscape או portrait) נקבע לפי היחס של view, ולפיו נבחרת הפריסה.
-
 const editor = { preview: 'חלון', showSafe: true };
-let view = { x0: 0, y0: 0, w: width, h: height };
-let orientation = 'landscape';
-let safe = null;
+const overlay = createFrameOverlay();
+let transition = null;
 
-function updateFrame() {
-  const aspect = previewOptions[editor.preview];
-  view = aspect ? containRect(aspect, width, height) : { x0: 0, y0: 0, w: width, h: height };
-  orientation = orientationOf(view);
-  safe = safeRect(scene.frame, orientation, view);
-  overlay?.update(view, safe, {
-    width,
-    height,
-    showSafe: editor.showSafe,
-    simulated: !!aspect,
-    background: scene.palette.background,
-    text: `${orientation}${orientation === 'portrait' && !scene.layouts.portrait ? ' (נגזר)' : ''} · ייחוס ${scene.frame.reference}`,
-  });
-}
-
-const activeLayout = () => resolveLayout(scene, orientation);
-const overlay = guiEnabled ? createFrameOverlay() : null;
-updateFrame();
+const stage = createStage({
+  canvas,
+  scene,
+  previewAspect: () => previewOptions[editor.preview],
+  onFrame: (s) => {
+    overlay.update(s.view, s.safe, {
+      width: s.width,
+      height: s.height,
+      showSafe: editor.showSafe,
+      simulated: s.simulated,
+      background: currentBackground(),
+      text: `${s.orientation}${s.orientation === 'portrait' && !scene.layouts.portrait ? ' (נגזר)' : ''} · ייחוס ${scene.frame.reference}`,
+    });
+  },
+});
+const { particles, renderer, stats } = stage;
 
 // ---------- גיאומטריה ----------
 
-let geom = null; // הגיאומטריה הנוכחית במרחב המקומי
-let T = null; // הטרנספורמציה הנוכחית אל המסך
 let lastGeomKey = null;
-let geomVersion = 0;
 
 function applyGeometry(g) {
-  geom = g;
-  geomVersion++;
-  if (transition?.active) return; // במצב מעבר הגיאומטריה נשמרת, ותוחל ביציאה ממנו
-  const nextT = computeTransform(g.meta, activeLayout(), safe);
-  if (retarget(particles, g, nextT, poolRng, width, height)) renderer.rebind();
-  T = nextT;
-  layoutHomes(particles, T);
-  applyColors();
-  stats.count = particles.count;
-  stats.pool = particles.capacity;
+  if (transition?.active) {
+    stage.geom = g; // במצב מעבר הגיאומטריה נשמרת, ותוחל ביציאה ממנו
+    return;
+  }
+  stage.applyGeometry(g);
 }
 
 const sampler = createSampler(
@@ -171,28 +119,30 @@ function loadGeometry() {
 
 /** פריסה, יחס ייחוס, תצוגה מקדימה או גודל חלון השתנו: טרנספורמציה חיה בלבד. */
 function onTransform() {
-  const prevOrientation = orientation;
-  updateFrame();
-  if (orientation !== prevOrientation) gui?.syncLayout();
+  const prevOrientation = stage.orientation;
+  stage.updateFrame();
+  if (stage.orientation !== prevOrientation) gui?.syncLayout();
   if (transition?.active) {
     transition.onFrame();
     return;
   }
-  if (!geom) return;
-  const nextT = computeTransform(geom.meta, activeLayout(), safe);
-  applyTransformDelta(particles, T, nextT);
-  T = nextT;
+  stage.applyTransform();
 }
+stage.onResize(onTransform);
 
 // עריכה של הפריסה הפעילה. portrait נגזר הופך לפריסה עצמאית בעריכה הראשונה שלו.
 const layoutHooks = {
-  state: () => ({ orientation, derived: orientation === 'portrait' && !scene.layouts.portrait, values: activeLayout() }),
+  state: () => ({
+    orientation: stage.orientation,
+    derived: stage.orientation === 'portrait' && !scene.layouts.portrait,
+    values: stage.activeLayout(),
+  }),
   set(key, value) {
-    const materialize = orientation === 'portrait' && !scene.layouts.portrait;
+    const materialize = stage.orientation === 'portrait' && !scene.layouts.portrait;
     if (materialize) {
       scene.layouts.portrait = Object.fromEntries(LAYOUT_KEYS.map((k) => [k, scene.layouts.landscape[k]]));
     }
-    scene.layouts[orientation][key] = value;
+    scene.layouts[stage.orientation][key] = value;
     onTransform();
     if (materialize) gui?.syncLayout();
   },
@@ -207,20 +157,12 @@ const layoutHooks = {
   onEditor: () => onTransform(),
 };
 
-function applyColors() {
-  if (!geom) return;
-  layoutColors(particles, geom.meta, scene.palette.mapBy);
-  setImageMix(particles, geom.rgb ? scene.shape.image.colorMix : 0);
-  renderer.invalidateColors();
-}
-
-const applyPalette = () => renderer.setPalette(scene.palette.stops, scene.palette.space);
+const applyColors = () => stage.applyColors();
+const applyPalette = () => stage.applyPalette();
 const applyBackground = () => {
-  renderer.setBackground(scene.palette.background);
-  updateFrame(); // הכיסוי מחוץ למסגרת המדומה בצבע הרקע
+  stage.applyBackground();
+  stage.updateFrame(); // הכיסוי מחוץ למסגרת המדומה בצבע הרקע
 };
-applyPalette();
-applyBackground();
 
 // ---------- טעינה, פריסטים, אפייה ----------
 
@@ -288,10 +230,10 @@ const bake = {
   // הגיאומטריה מוחלפת בזו שפוענחה מהקובץ, כך שמה שרואים בעורך זהה בדיוק למה שהנגן יטען.
   async bake() {
     if (scene.baked) return 'כבר אפוי';
-    if (!geom || sampler.isBusy()) throw new Error('הדגימה עדיין רצה, נסה שוב בעוד רגע');
+    if (!stage.geom || sampler.isBusy()) throw new Error('הדגימה עדיין רצה, נסה שוב בעוד רגע');
     const name = normalizeName(scene.id) ?? 'scene';
     if (bakedFiles[`${name}.tzb`] && !confirm(`baked/${name}.tzb כבר קיים. לדרוס?`)) return 'בוטל';
-    const bytes = await bakeToBytes(geom);
+    const bytes = await bakeToBytes(stage.geom);
     const decoded = await bytesToGeometry(bytes);
     const { file, persisted } = await saveBakedFile(name, bytes);
     primeBaked(file, decoded);
@@ -314,29 +256,30 @@ const bake = {
 
 // ---------- מצב מעבר ----------
 
-const transition = createTransitionMode({
+transition = createTransitionMode({
   particles,
   renderer,
-  rng: poolRng,
-  getFrame: () => ({ view, orientation, width, height }),
-  getCurrent: () => ({ scene, geom }),
+  rng: stage.rng,
+  getFrame: () => ({ view: stage.view, orientation: stage.orientation, width: stage.width, height: stage.height }),
+  getCurrent: () => ({ scene, geom: stage.geom }),
   onRebind: () => renderer.rebind(),
   onEnter: () => {
-    lastBackground = '';
     gui?.setTransitionMode(true);
-    overlay?.setMarker(transition.focusScreen);
+    overlay.setMarker(transition.focusScreen);
   },
   onExit: () => {
     gui?.setTransitionMode(false);
-    overlay?.setMarker(null);
+    overlay.setMarker(null);
     applyPalette();
     applyBackground();
     // חזרה לסצנה הנערכת: התאמה מרחבית מהמצב הנוכחי, בלי קפיצה
-    if (geom) applyGeometry(geom);
+    if (stage.geom) stage.applyGeometry(stage.geom);
   },
 });
 
-const currentBackground = () => (transition.active ? transition.background : scene.palette.background);
+function currentBackground() {
+  return transition?.active ? transition.background : scene.palette.background;
+}
 
 // תצוגת גלילה במצב מעבר: גלגלת ומשטח מגע מעל הקנבס מזיזים את t (מעל הפאנל הוא נגלל כרגיל)
 window.addEventListener('wheel', (e) => {
@@ -351,7 +294,7 @@ canvas.addEventListener('pointerup', (e) => {
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
   if (moved < 6 && performance.now() - downAt.t < 400) {
     transition.setFocus(e.clientX, e.clientY);
-    overlay?.setMarker(transition.focusScreen);
+    overlay.setMarker(transition.focusScreen);
     gui?.refreshTransition();
   }
   downAt = null;
@@ -363,13 +306,14 @@ const exportHooks = {
   opts: exportOpts,
   async png() {
     const m = Number(exportOpts.multiplier);
-    const blob = await framePNG(renderer, view, m, exportOpts.transparent, currentBackground());
-    const name = `${normalizeName(scene.id) ?? 'frame'}-${Math.round(view.w * m)}x${Math.round(view.h * m)}.png`;
+    const v = stage.view;
+    const blob = await framePNG(renderer, v, m, exportOpts.transparent, currentBackground());
+    const name = `${normalizeName(scene.id) ?? 'frame'}-${Math.round(v.w * m)}x${Math.round(v.h * m)}.png`;
     downloadBlob(blob, name);
     return `יוצא ${name}`;
   },
   svg() {
-    const { svg, count } = frameSVG(particles, renderer.lut, renderer.lut2, view, exportOpts.transparent, currentBackground());
+    const { svg, count } = frameSVG(particles, renderer.lut, renderer.lut2, stage.view, exportOpts.transparent, currentBackground());
     const name = `${normalizeName(scene.id) ?? 'frame'}.svg`;
     downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), name);
     return `יוצא ${name} (${count} עיגולים)`;
@@ -416,68 +360,29 @@ onShapeFilesChange(() => {
   if (scene.shape.type === 'image') onGeometry({ force: true });
 });
 
-// שמירה אוטומטית של המצב הנוכחי, רק כשהפאנל פעיל (גולשים רואים תמיד את הסצנה שנבנתה).
-// האפייה נשמרת בנפרד ורק כשהיא מתחלפת.
-if (guiEnabled) {
-  const autosave = () => saveLocal(toFile('scene', { ...scene, baked: null }), scene.baked);
-  setInterval(autosave, 1000);
-  window.addEventListener('pagehide', autosave);
-}
+// שמירה אוטומטית של המצב הנוכחי. האפייה נשמרת כהפניה, בנפרד, ורק כשהיא מתחלפת.
+const autosave = () => saveLocal(toFile('scene', { ...scene, baked: null }), scene.baked);
+setInterval(autosave, 1000);
+window.addEventListener('pagehide', autosave);
 
-// שינוי גודל החלון הוא טרנספורמציה חיה, לא דגימה
-window.addEventListener('resize', () => {
-  width = window.innerWidth;
-  height = window.innerHeight;
-  renderer.resize(width, height);
-  onTransform();
-});
-
+stage.updateFrame();
 loadGeometry();
 
 // לבדיקות ולדיבאג מהקונסול, רק בזמן פיתוח
 if (import.meta.env.DEV) {
   window.__tz = {
-    scene, particles, stats, physics, transition,
-    get geom() { return geom; },
-    get geomVersion() { return geomVersion; },
-    get view() { return view; },
+    scene, particles, stats, transition, stage,
+    physics: stage.physics,
+    get geom() { return stage.geom; },
+    get geomVersion() { return stage.geomVersion; },
+    get view() { return stage.view; },
   };
 }
 
-// ---------- לולאת פריים ----------
-
-let last = performance.now();
-let lastBackground = '';
-let fpsFrames = 0;
-let fpsTime = 0;
-
-function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-
-  if (transition.active) {
-    const f = transition.frame(dt);
-    updateMotion(motion, particles, f.motion, f.seed, dt, f.unit);
-    transition.afterMotion();
-    stepPhysics(physics, particles, f.physics, dt, f.unit, view);
-    if (f.background !== lastBackground) {
-      lastBackground = f.background;
-      renderer.setBackground(f.background);
-    }
-  } else {
-    updateMotion(motion, particles, scene.motion, scene.seed, dt, safe.unit);
-    stepPhysics(physics, particles, scene.physics, dt, safe.unit, view);
-  }
-  renderer.render();
-
-  fpsFrames++;
-  fpsTime += dt;
-  if (fpsTime >= 0.5) {
-    stats.fps = Math.round(fpsFrames / fpsTime);
-    stats.physicsMs = Math.round(physics.ms * 100) / 100;
-    fpsFrames = 0;
-    fpsTime = 0;
-  }
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+// במצב מעבר, המעבר מספק את פרמטרי הפריים; אחרת הסצנה הנערכת
+stage.run((dt) => {
+  if (!transition.active) return null;
+  const f = transition.frame(dt);
+  f.afterMotion = transition.afterMotion;
+  return f;
+});

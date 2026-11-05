@@ -47,7 +47,20 @@
 - `editor.html`: הכלי הנוכחי. הפאנל תמיד פעיל, בלי `?debug`.
 - `index.html`: הנגן. בלי lil-gui ובלי worker, טוען את storyboard.json ואת הקבצים האפויים.
 
-שניהם מייבאים את אותו מנוע מ `src/engine/`: מאגר, פיזיקה, תנועה, רינדור, מסגרת, layout, ומעבר טהור (evaluateAt). מה שתלוי בעורך נשאר ב `src/editor/`: פאנל, worker, אפייה, פריסטים ושמירה. שני העמודים הם `build.rollupOptions.input` ב vite.config.js.
+**המנוע המשותף** הוא `src/engine/stage.js`, הבמה. היא מחזיקה את המאגר, הרינדור, התנועה, הפיזיקה, המצביע, המסגרת והפריסה, החלה של גיאומטריה ולולאת הפריים, ומשתמשת במודולים הקיימים (sim/, render/, scenes/, ובהמשך transitions/evaluate.js).
+
+**מה שתלוי בעורך:**
+- `src/editor/main.js`
+- `src/ui/` (פאנל, שכבת המסגרת)
+- ה worker והדגימה (`shapes/sampling.js`, `raster.js`, `sampler.worker.js`)
+- מצב המעבר בעורך (`transitions/mode.js`)
+- הייצוא
+
+**הנגן:** `src/player/main.js`.
+
+שני העמודים הם `build.rolldownOptions.input` ב vite.config.js (ב Vite 8 זה rolldownOptions). בבנייה נבדק ש lil-gui, ה worker ו gsap נמצאים רק בקוד של העורך.
+
+**מה נבנה בסעיף ב:** נגן מינימלי שמציג סצנה אפויה אחת. ברירת המחדל היא הראשונה לפי האלפבית, ו `?scene=<שם>` בוחר אחרת. כך נבדק שהמנוע עובד בלי העורך. בסעיף ה הוא יוחלף בנגן הסטוריבורד.
 
 ## ג. storyboard.json
 

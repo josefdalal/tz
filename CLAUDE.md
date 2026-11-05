@@ -147,12 +147,24 @@
 
 ## ספריות
 
-Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noise, culori (אינטרפולציית צבע ב OKLCH), lil-gui (פאנל שליטה, רק במצב פיתוח או עם ?debug בכתובת). פריסה ל GitHub Pages דרך GitHub Actions.
+Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noise, culori (אינטרפולציית צבע ב OKLCH), lil-gui (פאנל השליטה, רק בעורך). פריסה ל GitHub Pages דרך GitHub Actions.
+
+## שני עמודים
+
+- `index.html`: הנגן, מה שהגולש רואה. בלי פאנל, בלי worker ובלי דגימה. מציג רק סצנות אפויות.
+- `editor.html`: העורך, עם הפאנל תמיד פעיל. בזמן פיתוח: http://localhost:5173/editor.html.
+
+שני העמודים בנויים על אותו מנוע, הבמה ב `src/engine/stage.js`. הבמה מחזיקה את המאגר, הרינדור, התנועה, הפיזיקה, המצביע, המסגרת והפריסה, החלה של גיאומטריה ולולאת הפריים. מה שתלוי בעורך (פאנל, worker, פריסטים ושמירה, אפייה, מצב מעבר, ייצוא) נמצא ב `src/editor/main.js` ובמודולים שרק הוא מייבא. שני העמודים הם `build.rolldownOptions.input` ב vite.config.js, ובבנייה lil-gui, ה worker ו gsap נכנסים רק לקוד של העורך. אין יותר `?debug`.
 
 ## מבנה
 
 ```
+index.html   הנגן
+editor.html  העורך
 src/
+  engine/    stage.js      הבמה: המנוע המשותף לנגן ולעורך
+  editor/    main.js       העורך: פאנל, worker, פריסטים, אפייה, מעבר, ייצוא, שמירה אוטומטית
+  player/    main.js       הנגן (כרגע סצנה אפויה אחת; בסעיף ה: הסטוריבורד)
   sim/       particles.js  מאגר שגדל: x, y, vx, vy, homeX, homeY, r, targetR, colorT, phase,
                            offX, offY, pulse, drawR, imgMix, imgColor (vec3),
                            localX, localY, localR, edge, rand (יעד במרחב המקומי)
@@ -174,17 +186,14 @@ src/
              bake.js       קריאה של פורמט האפייה הישן (JSON)
              presets.js    מאגר הפריסטים מ import.meta.glob, שמירה דרך ה plugin
              persist.js    localStorage, ייצוא וייבוא של קובץ JSON
-             manager.js    הקצאת עיגולים בין סצנות, אינטרפולציה
-             transitions.js מצבי כניסה ויציאה
   transitions/ prepare.js  התאמה, עודפים וחוסרים, צבעים לשני הצדדים, סדר
              evaluate.js   נקודות קצה, evaluateAt(t) טהור, checksum, lerpInto
              mode.js       מצב מעבר בעורך: טעינה ודגימה, ניגון, הפיכות, שמירה
-  scroll/    storyboard.js ScrollTrigger ו Lenis: התקדמות גלילה אל אינדקס סצנה ו t מקומי
   render/    renderer.js   Three.js, שיידר שטוח וכדור
              palette.js    טבלת צבעים מאינטרפולציה ב OKLCH
              export.js     ייצוא PNG (render target בכפולת רזולוציה) ו SVG
              oklab.js      sRGB ו OKLab, ערבוב ב OKLCH (זהה לשיידר)
-  ui/        gui.js        lil-gui
+  ui/        gui.js        lil-gui (עורך בלבד)
              frameOverlay.js  מסגרת מדומה ואזור בטוח מעל הקנבס (עורך בלבד)
   util/      rng.js, merge.js (deepMerge, assignInPlace)
 scenes/      פריסטים של סצנה שלמה, קובץ JSON לכל אחד
@@ -208,9 +217,9 @@ vite.config.js  base יחסי ל Pages, ו plugin פיתוח: /__presets (JSON),
 
 הטעינה כותבת לתוך אובייקט ה scene הקיים במקום (`assignInPlace`), כי ה controllers של הפאנל מחזיקים הפניות לאובייקטים הפנימיים. אסור להחליף את `scene.motion` או חלקים אחרים באובייקט חדש.
 
-בזמן פיתוח, "שמור" בפאנל שולח POST ל `/__presets`, וה plugin ב vite.config.js כותב לתיקייה בריפו. הכתיבה מוגבלת לשלוש התיקיות, ונדרשת הכותרת `X-Tz-Save`. בבנייה (למשל עם ?debug באתר) השמירה מורידה את הקובץ במקום. הרשימות בפאנל נבנות מ `import.meta.glob`. presets.js מקבל את עצמו ב HMR, כך שקובץ חדש מופיע ברשימה בלי רענון. הקריאה חייבת להיות כתובה מילולית `import.meta.hot.accept()`, אחרת Vite לא מזהה אותה.
+בזמן פיתוח, "שמור" בפאנל שולח POST ל `/__presets`, וה plugin ב vite.config.js כותב לתיקייה בריפו. הכתיבה מוגבלת לשלוש התיקיות, ונדרשת הכותרת `X-Tz-Save`. בעורך שבנוי, בלי שרת פיתוח (dist/editor.html), השמירה מורידה את הקובץ במקום. הרשימות בפאנל נבנות מ `import.meta.glob`. presets.js מקבל את עצמו ב HMR, כך שקובץ חדש מופיע ברשימה בלי רענון. הקריאה חייבת להיות כתובה מילולית `import.meta.hot.accept()`, אחרת Vite לא מזהה אותה.
 
-כשהפאנל פעיל, המצב הנוכחי נשמר כל שנייה ב localStorage (`tz.current`) ונטען ברענון. "איפוס לברירת מחדל" מוחק את השמירה הזו. גולש בלי הפאנל לא קורא ולא כותב ל localStorage. "ייצוא JSON" מוריד את הסצנה המלאה כגיבוי. "ייבוא JSON" מזהה את סוג הקובץ לפי `type`.
+בעורך, המצב הנוכחי נשמר כל שנייה ב localStorage (`tz.current`) ונטען ברענון. "איפוס לברירת מחדל" מוחק את השמירה הזו. הנגן לא קורא ולא כותב ל localStorage. "ייצוא JSON" מוריד את הסצנה המלאה כגיבוי. "ייבוא JSON" מזהה את סוג הקובץ לפי `type`.
 
 ## דוגמת סצנה
 
