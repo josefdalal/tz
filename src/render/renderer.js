@@ -156,11 +156,62 @@ export function createRenderer(canvas, particles) {
     renderer.render(scene, camera);
   }
 
+  /**
+   * רינדור של המסגרת view לתוך render target בכפולת רזולוציה m, וקריאת הפיקסלים.
+   * מחזיר RGBA לא מוכפל באלפא, בשורות מלמעלה למטה (מוכן ל ImageData).
+   */
+  function capture(view, m, transparent, background) {
+    const w = Math.round(view.w * m);
+    const h = Math.round(view.h * m);
+    const max = renderer.capabilities.maxTextureSize;
+    if (w > max || h > max) throw new Error(`${w}x${h} גדול מהמקסימום של כרטיס המסך (${max})`);
+    const rt = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false });
+    const cam = new THREE.OrthographicCamera(view.x0, view.x0 + view.w, view.y0, view.y0 + view.h, -1, 1);
+    const prevColor = new THREE.Color();
+    renderer.getClearColor(prevColor);
+    const prevAlpha = renderer.getClearAlpha();
+    try {
+      const n = particles.active;
+      mesh.geometry.instanceCount = n;
+      upload(dynamicAttrs, n);
+      upload(colorAttrs, n);
+      material.uniforms.uPixelRatio.value = m;
+      renderer.setRenderTarget(rt);
+      renderer.setClearColor(background, transparent ? 0 : 1);
+      renderer.clear();
+      renderer.render(scene, cam);
+      const gl = new Uint8Array(w * h * 4);
+      renderer.readRenderTargetPixels(rt, 0, 0, w, h, gl);
+      // היפוך שורות (GL מלמטה למעלה), וביטול ההכפלה באלפא שהמיזוג יצר מעל רקע שקוף
+      const out = new Uint8ClampedArray(w * h * 4);
+      for (let yy = 0; yy < h; yy++) {
+        const src = (h - 1 - yy) * w * 4;
+        const dst = yy * w * 4;
+        for (let xx = 0; xx < w * 4; xx += 4) {
+          const a = gl[src + xx + 3];
+          const k = transparent && a > 0 ? 255 / a : 1;
+          out[dst + xx] = gl[src + xx] * k;
+          out[dst + xx + 1] = gl[src + xx + 1] * k;
+          out[dst + xx + 2] = gl[src + xx + 2] * k;
+          out[dst + xx + 3] = a;
+        }
+      }
+      return { w, h, pixels: out };
+    } finally {
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(prevColor, prevAlpha);
+      material.uniforms.uPixelRatio.value = pixelRatio;
+      rt.dispose();
+    }
+  }
+
   return {
     resize,
     setPalette,
     setBackground,
     render,
+    capture,
+    lut, // טבלת הצבעים הנוכחית (RGBA, 256 ערכים), לייצוא SVG
     rebind: bind,
     invalidateColors: () => { colorsDirty = true; },
     three: renderer,

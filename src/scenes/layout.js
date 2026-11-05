@@ -68,12 +68,17 @@ export function applyTransformDelta(p, from, to) {
   const e = to.a * ie + to.c * iff + to.e;
   const f = to.b * ie + to.d * iff + to.f;
   const rs = from.scale ? to.scale / from.scale : 1;
-  const { x, y, homeX, homeY, r, targetR } = p;
+  const { x, y, vx, vy, homeX, homeY, r, targetR } = p;
   for (let i = 0; i < p.active; i++) {
     const px = x[i];
     const py = y[i];
     x[i] = a * px + c * py + e;
     y[i] = b * px + d * py + f;
+    // המהירות עוברת רק את החלק הלינארי (סיבוב, קנה מידה, היפוך)
+    const ux = vx[i];
+    const uy = vy[i];
+    vx[i] = a * ux + c * uy;
+    vy[i] = b * ux + d * uy;
     const hx = homeX[i];
     const hy = homeY[i];
     homeX[i] = a * hx + c * hy + e;

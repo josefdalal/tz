@@ -43,7 +43,7 @@ function tagFolder(folder, kind) {
  */
 export function createGui(scene, stats, hooks) {
   if (!guiEnabled) return null;
-  const { onGeometry, onTransform, layout, onColors, onPalette, onBackground, presets, shapeFiles, bake } = hooks;
+  const { onGeometry, onTransform, layout, onColors, onPalette, onBackground, presets, shapeFiles, bake, exporter } = hooks;
 
   const style = document.createElement('style');
   style.textContent = CSS;
@@ -71,6 +71,7 @@ export function createGui(scene, stats, hooks) {
   info.add(stats, 'pool').name('מאגר').listen().disable();
   info.add(stats, 'sampling').name('דגימה').listen().disable();
   info.add(stats, 'sampleMs').name('דגימה ms').listen().disable();
+  info.add(stats, 'physicsMs').name('פיזיקה ms').listen().disable();
   info.add(stats, 'fps').name('fps').listen().disable();
 
   const run = async (fn) => {
@@ -245,6 +246,29 @@ export function createGui(scene, stats, hooks) {
   const fCoh = fMotion.addFolder('קוהרנטיות');
   fCoh.add(m, 'coherence', 0, 1, 0.01).name('קוהרנטיות');
   fCoh.add(m, 'fieldScale', 0.0005, 0.03, 0.0005).name('סקאלת שדה');
+
+  // פיזיקה (חי)
+  const ph = scene.physics;
+  const fPhysics = tagFolder(gui.addFolder('פיזיקה'), 'live');
+  fPhysics.add(ph.spring, 'frequency', 0.2, 8, 0.05).name('קפיץ: תדר Hz');
+  fPhysics.add(ph.spring, 'damping', 0.05, 2, 0.01).name('שיכוך (1 בלי קפיצה)');
+  fPhysics.add(ph, 'substeps', 1, 8, 1).name('substeps');
+  const fCol = fPhysics.addFolder('התנגשויות');
+  fCol.add(ph.collisions, 'enabled').name('פעיל');
+  fCol.add(ph.collisions, 'strength', 0, 1, 0.01).name('עוצמה');
+  fCol.add(ph.collisions, 'iterations', 1, 8, 1).name('איטרציות');
+  fCol.add(ph.collisions, 'radius', { 'רדיוס בסיס': 'base', 'רדיוס פועם': 'pulsed' }).name('לפי');
+  const fMouse = fPhysics.addFolder('עכבר ומגע');
+  fMouse.add(ph.mouse, 'enabled').name('פעיל');
+  fMouse.add(ph.mouse, 'radius', 0, 400, 1).name('רדיוס (ייחוס)');
+  fMouse.add(ph.mouse, 'strength', 0, 1, 0.01).name('עוצמה');
+
+  // ייצוא של המסגרת שבתצוגה (הגדרות עורך, לא חלק מהסצנה)
+  const fExport = gui.addFolder('ייצוא');
+  fExport.add(exporter.opts, 'multiplier', { '1x': 1, '2x': 2, '3x': 3, '4x': 4 }).name('רזולוציה');
+  fExport.add(exporter.opts, 'transparent').name('רקע שקוף');
+  fExport.add({ go: () => run(exporter.png) }, 'go').name('ייצוא PNG');
+  fExport.add({ go: () => run(exporter.svg) }, 'go').name('ייצוא SVG');
 
   const geoFolders = [fSource, fRadius];
 

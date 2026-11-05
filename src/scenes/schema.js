@@ -3,7 +3,7 @@ import { deepMerge, clone } from '../util/merge.js';
 
 // גרסת מבנה הקבצים. כשמשנים מבנה באופן שמיזוג עם ברירות מחדל לא מספיק
 // (שינוי שם או העברת שדה), מעלים את הגרסה ומוסיפים פונקציה ל migrations.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const LAYOUT_KEYS = ['x', 'y', 'rotation', 'scale', 'flipX', 'flipY'];
 
@@ -49,7 +49,19 @@ export const defaultScene = {
     fieldScale: 0.004, // סקאלת השדה המשותף (קטן יותר: אזורים גדולים יותר שזזים יחד)
     colorShift: 0.1, // שלב 3
   },
-  physics: { stiffness: 0.08, damping: 0.88, collision: 1.0, mouseRadius: 80 },
+  // פיזיקה (חי). קפיץ: frequency בהרץ, damping יחס שיכוך (1 קריטי, בלי overshoot).
+  // ברירת המחדל קרובה בזמן ההתקרבות ל relax הזמני הקודם.
+  physics: {
+    spring: { frequency: 2, damping: 1 },
+    substeps: 2,
+    collisions: {
+      enabled: false, // כבוי: אפס עלות, בלי רשת
+      strength: 1, // חלק מהחפיפה שמופרד בכל איטרציה
+      iterations: 2,
+      radius: 'base', // base: הרדיוס בלי פעימה. pulsed: הרדיוס המצויר, עם פעימה
+    },
+    mouse: { enabled: true, radius: 80, strength: 1 }, // radius בפיקסלי ייחוס
+  },
   enter: { mode: 'fromCenter' },
   exit: { mode: 'disperse', strength: 1.0 },
   render: { mode: 'flat', lightDir: [-0.4, -0.6, 0.7] },
@@ -85,6 +97,7 @@ export function geometryKey(scene) {
 export const sizeModes = ['random', 'edgeDistance', 'noise'];
 export const mapByModes = ['y', 'x', 'radius', 'edge', 'radial', 'random'];
 export const maskByModes = ['alpha', 'luminance'];
+export const collisionRadiusModes = ['base', 'pulsed'];
 
 // שלושה סוגי פריסטים. scene מכיל גם palette ו motion; השניים האחרים הם חלקים ממנו.
 export const KINDS = {
@@ -107,6 +120,15 @@ const migrations = {
       }
       delete shape.fit;
       return { ...data, shape, layouts: { landscape, portrait: null } };
+    },
+    // 2 אל 3: שדות הפיזיקה הישנים (מקדמים לפריים, שלא היו בשימוש) הוחלפו במבנה חדש.
+    // רק mouseRadius עובר; השאר מקבלים ברירת מחדל.
+    2: (data) => {
+      const old = data.physics ?? {};
+      const physics = {};
+      if (typeof old.mouseRadius === 'number') physics.mouse = { radius: old.mouseRadius };
+      for (const k of ['spring', 'substeps', 'collisions', 'mouse']) if (k in old) physics[k] = old[k];
+      return { ...data, physics };
     },
   },
   palette: {},

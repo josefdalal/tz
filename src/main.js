@@ -5,7 +5,8 @@
 // סצנה אפויה (scene.baked) משמשת כגיאומטריה במקום ה worker.
 
 import { createParticles, growParticles, setImageMix, MAX_POOL } from './sim/particles.js';
-import { relax } from './sim/physics.js';
+import { createPhysics, stepPhysics } from './sim/physics.js';
+import { framePNG, frameSVG } from './render/export.js';
 import { createMotion, updateMotion } from './sim/motion.js';
 import { retarget } from './sim/match.js';
 import { createSampler } from './shapes/sampling.js';
@@ -16,7 +17,7 @@ import { orientationOf, safeRect, resolveLayout, containRect, previewOptions, LA
 import { createFrameOverlay } from './ui/frameOverlay.js';
 import { bakeGeometry, unbakeGeometry } from './scenes/bake.js';
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
-import { loadLocal, saveLocal, clearLocal, downloadJSON, pickJSONFile, pickFile } from './scenes/persist.js';
+import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from './scenes/persist.js';
 import { createRenderer } from './render/renderer.js';
 import { createGui, guiEnabled } from './ui/gui.js';
 import { assignInPlace, clone } from './util/merge.js';
@@ -45,9 +46,31 @@ const poolRng = mulberry32(scene.seed + 1);
 const particles = createParticles();
 growParticles(particles, Math.min(MAX_POOL, scene.maxCount), poolRng, width, height);
 const renderer = createRenderer(canvas, particles);
-const stats = { count: 0, pool: particles.capacity, sampling: '', sampleMs: 0, fps: 0 };
+const stats = { count: 0, pool: particles.capacity, sampling: '', sampleMs: 0, physicsMs: 0, fps: 0 };
 const motion = createMotion(scene.seed);
+const physics = createPhysics();
 renderer.resize(width, height);
+
+// מצביע (עכבר או מגע) כגוף פיזי. רק מעל הקנבס: מעל הפאנל הוא לא דוחף.
+// עכבר: פעיל בזמן ריחוף. מגע: פעיל רק בזמן לחיצה. touch-action none כדי שהגרירה לא תגלול;
+// בשלב הסטוריבורד (גלילה) זה ייבחן מחדש.
+canvas.style.touchAction = 'none';
+const pointer = physics.pointer;
+const onPointer = (e) => {
+  const overCanvas = e.target === canvas;
+  if (e.pointerType === 'touch') {
+    pointer.active = overCanvas && e.type !== 'pointerup' && (e.type === 'pointerdown' || pointer.active);
+  } else {
+    pointer.active = overCanvas;
+  }
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+};
+for (const type of ['pointermove', 'pointerdown', 'pointerup']) window.addEventListener(type, onPointer, { passive: true });
+for (const type of ['pointercancel', 'pointerleave', 'blur']) {
+  window.addEventListener(type, () => { pointer.active = false; }, { passive: true });
+}
+document.documentElement.addEventListener('pointerleave', () => { pointer.active = false; });
 
 // ---------- מסגרת ופריסה ----------
 // view: המסגרת שבה הסצנה מוצגת. בדרך כלל כל החלון; בעורך אפשר לדמות יחס אחר.
@@ -257,6 +280,25 @@ const bake = {
   },
 };
 
+// ייצוא המסגרת שבתצוגה. הגדרות הייצוא שייכות לעורך, לא לסצנה.
+const exportOpts = { multiplier: 2, transparent: false };
+const exportHooks = {
+  opts: exportOpts,
+  async png() {
+    const m = Number(exportOpts.multiplier);
+    const blob = await framePNG(renderer, view, m, exportOpts.transparent, scene.palette.background);
+    const name = `${normalizeName(scene.id) ?? 'frame'}-${Math.round(view.w * m)}x${Math.round(view.h * m)}.png`;
+    downloadBlob(blob, name);
+    return `יוצא ${name}`;
+  },
+  svg() {
+    const { svg, count } = frameSVG(particles, renderer.lut, view, exportOpts.transparent, scene.palette.background);
+    const name = `${normalizeName(scene.id) ?? 'frame'}.svg`;
+    downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), name);
+    return `יוצא ${name} (${count} עיגולים)`;
+  },
+};
+
 const shapeFileHooks = {
   names: shapeFileNames,
   onChange: onShapeFilesChange,
@@ -288,6 +330,7 @@ const gui = createGui(scene, stats, {
   presets,
   shapeFiles: shapeFileHooks,
   bake,
+  exporter: exportHooks,
 });
 
 // קובץ צורה שהשתנה בדיסק (HMR) צריך דגימה מחדש אם הוא הצורה הנוכחית
@@ -315,7 +358,12 @@ loadGeometry();
 
 // לבדיקות ולדיבאג מהקונסול, רק בזמן פיתוח
 if (import.meta.env.DEV) {
-  window.__tz = { scene, particles, stats, get geom() { return geom; }, get geomVersion() { return geomVersion; } };
+  window.__tz = {
+    scene, particles, stats, physics,
+    get geom() { return geom; },
+    get geomVersion() { return geomVersion; },
+    get view() { return view; },
+  };
 }
 
 // ---------- לולאת פריים ----------
@@ -329,13 +377,14 @@ function frame(now) {
   last = now;
 
   updateMotion(motion, particles, scene.motion, scene.seed, dt, safe.unit);
-  relax(particles, dt);
+  stepPhysics(physics, particles, scene.physics, dt, safe.unit, view);
   renderer.render();
 
   fpsFrames++;
   fpsTime += dt;
   if (fpsTime >= 0.5) {
     stats.fps = Math.round(fpsFrames / fpsTime);
+    stats.physicsMs = Math.round(physics.ms * 100) / 100;
     fpsFrames = 0;
     fpsTime = 0;
   }
