@@ -99,15 +99,45 @@ export const mapByModes = ['y', 'x', 'radius', 'edge', 'radial', 'random'];
 export const maskByModes = ['alpha', 'luminance'];
 export const collisionRadiusModes = ['base', 'pulsed'];
 
-// שלושה סוגי פריסטים. scene מכיל גם palette ו motion; השניים האחרים הם חלקים ממנו.
+// סגנון מעבר בין שתי סצנות (src/transitions). הכול פרמטרים, בלי מיקומים.
+export const defaultTransitionStyle = {
+  matching: { mode: 'hilbert', seed: 1 }, // hilbert, nearest, brightness, size, random
+  path: {
+    mode: 'straight', // straight, arc, noise, scatter, gather
+    curvature: 0.35, // arc: הסטת נקודת הביקורת, ביחס לאורך המסלול
+    direction: 'cw', // arc: cw, ccw, alternate, random
+    noiseAmount: 120, // noise: עוצמה בפיקסלי ייחוס
+    noiseScale: 0.004, // noise: סקאלת השדה
+    spread: 260, // scatter: רדיוס ההתפזרות בפיקסלי ייחוס
+    gatherShrink: 0.4, // gather: קנה הרדיוס בנקודת האיסוף
+  },
+  order: { mode: 'none', stagger: 0.4, reverse: false, seed: 1 }, // none, x, y, distance, radius, color, random
+  focus: [0.5, 0.5], // נקודה במסגרת (0 עד 1): ל order=distance ול path=gather
+  leftovers: { mode: 'shrink', angle: -90 }, // עודפים ב A: shrink, exit (בכיוון angle), merge
+  spawns: { mode: 'grow' }, // חוסרים ב B: grow, split, edges
+  ease: 'power2.inOut', // easing של GSAP, לכל עיגול
+  overlay: { dip: 1, sharpness: 1 }, // שכבת העל (תנועה, התנגשויות) בזמן תעופה: 1 - dip * sin(πu)^sharpness
+  duration: 2.5, // שניות, לניגון בעורך
+};
+
+// מעבר שמור: זוג סצנות וסגנון. נשמר כ transitions/<from>__<to>.json
+export const defaultTransition = { from: '', to: '', ...defaultTransitionStyle };
+
+// סוגי פריסטים. scene מכיל גם palette ו motion. panel: false = לא בתיקיית "פריסטים" אלא
+// בתיקיית "מעבר" של העורך.
 export const KINDS = {
   scene: { folder: 'scenes', label: 'סצנה', defaults: () => defaultScene },
   palette: { folder: 'palettes', label: 'פלטה', defaults: () => defaultScene.palette },
   motion: { folder: 'motions', label: 'תנועה', defaults: () => defaultScene.motion },
+  transition: { folder: 'transitions', label: 'מעבר', defaults: () => defaultTransition, panel: false },
+  transitionStyle: { folder: 'transition-styles', label: 'סגנון מעבר', defaults: () => defaultTransitionStyle, panel: false },
 };
+export const PANEL_KINDS = Object.keys(KINDS).filter((k) => KINDS[k].panel !== false);
 
 // migrations[kind][v] ממיר נתונים מגרסה v לגרסה v+1.
 const migrations = {
+  transition: {},
+  transitionStyle: {},
   scene: {
     // 1 אל 2: הטרנספורמציה עברה מ shape אל layouts.landscape. אפייה ישנה נשמרת כמו שהיא
     // (s0 שלה היה בפיקסלי מסך, ולכן הגודל שלה עשוי לזוז מעט).

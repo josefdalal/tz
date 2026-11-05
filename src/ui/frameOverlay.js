@@ -17,8 +17,21 @@ export function createFrameOverlay() {
   const label = document.createElement('div');
   label.style.cssText =
     'position:absolute;font:11px system-ui,sans-serif;color:rgba(255,80,80,0.95);padding:2px 4px;direction:ltr;white-space:nowrap';
-  root.append(frame, safe, label);
+  // נקודת מוקד של מעבר (סדר לפי מרחק, איסוף לנקודה)
+  const marker = document.createElement('div');
+  marker.style.cssText =
+    'position:absolute;width:14px;height:14px;margin:-8px 0 0 -8px;border:2px solid rgba(255,80,80,0.95);border-radius:50%;display:none;box-shadow:0 0 0 1px rgba(255,255,255,0.7)';
+  root.append(frame, safe, label, marker);
   document.body.appendChild(root);
+
+  /** @param pt [x, y] במסך, או null להסתרה */
+  function setMarker(pt) {
+    marker.style.display = pt ? 'block' : 'none';
+    if (pt) {
+      marker.style.left = `${pt[0]}px`;
+      marker.style.top = `${pt[1]}px`;
+    }
+  }
 
   const place = (el, x, y, w, h) => {
     el.style.left = `${x}px`;
@@ -56,5 +69,5 @@ export function createFrameOverlay() {
     label.textContent = opts.text;
   }
 
-  return { update };
+  return { update, setMarker };
 }

@@ -11,6 +11,60 @@ import { samplingScale } from '../scenes/frame.js';
 
 export const DEBOUNCE_MS = 120;
 
+async function loadImageFor(shape) {
+  if (shape.type !== 'image') return null;
+  const url = shapeFiles[shape.src];
+  if (!url) throw new Error(`קובץ צורה לא נמצא: ${shape.src}`);
+  const im = await loadShapeImage(url, isSvgName(shape.src));
+  return { ...im, url };
+}
+
+/** עבודת דגימה מוכנה לשליחה: raster, פרמטרים ו meta. */
+async function prepareJob(scene) {
+  const shape = scene.shape;
+  const source = makeSource(shape, await loadImageFor(shape));
+  if (!source) throw new Error('אין מקור צורה תקין');
+  // קנה המידה של הדגימה, בפיקסלי ייחוס לפי פריסת landscape. כל מסך ופריסה אחרים: טרנספורמציה חיה.
+  const s0 = samplingScale(scene, source.bb);
+  return {
+    source,
+    s0,
+    key: `${source.key}|${s0.toFixed(5)}`,
+    params: {
+      isImage: source.isImage,
+      seed: scene.seed,
+      maxCount: scene.maxCount,
+      radius: { ...scene.radius },
+      image: { ...shape.image },
+    },
+    meta: { bw: source.bb.w, bh: source.bb.h, s0, isImage: source.isImage },
+  };
+}
+
+let onceWorker = null;
+let onceSeq = 0;
+
+/**
+ * דגימה חד פעמית של סצנה כלשהי (לא הסצנה הנערכת), ב worker נפרד. משמש את עורך המעברים.
+ * @returns {Promise<object>} geom
+ */
+export async function sampleOnce(scene) {
+  const job = await prepareJob(scene);
+  onceWorker ??= new Worker(new URL('./sampler.worker.js', import.meta.url), { type: 'module' });
+  const id = ++onceSeq;
+  const raster = rasterize(job.source, job.s0);
+  return new Promise((resolve, reject) => {
+    const onMessage = (e) => {
+      if (e.data.id !== id) return;
+      onceWorker.removeEventListener('message', onMessage);
+      if (e.data.error) reject(new Error(e.data.error));
+      else resolve(e.data.geom);
+    };
+    onceWorker.addEventListener('message', onMessage);
+    onceWorker.postMessage({ id, key: job.key, raster, params: job.params, meta: job.meta }, [raster.pixels.buffer]);
+  });
+}
+
 /**
  * @param {() => {scene: object}} getState
  * @param {(geom: object) => void} onResult
@@ -36,14 +90,6 @@ export function createSampler(getState, onResult, onStatus) {
     }, delay);
   }
 
-  async function loadImage(shape) {
-    if (shape.type !== 'image') return null;
-    const url = shapeFiles[shape.src];
-    if (!url) throw new Error(`קובץ צורה לא נמצא: ${shape.src}`);
-    const im = await loadShapeImage(url, isSvgName(shape.src));
-    return { ...im, url };
-  }
-
   async function pump() {
     if (busy || !pending) return;
     pending = false;
@@ -51,22 +97,7 @@ export function createSampler(getState, onResult, onStatus) {
     const id = ++seq;
     try {
       const { scene } = getState();
-      const shape = scene.shape;
-      const image = await loadImage(shape);
-      const source = makeSource(shape, image);
-      if (!source) throw new Error('אין מקור צורה תקין');
-
-      // קנה המידה של הדגימה, בפיקסלי ייחוס לפי פריסת landscape. כל מסך ופריסה אחרים: טרנספורמציה חיה.
-      const s0 = samplingScale(scene, source.bb);
-      const key = `${source.key}|${s0.toFixed(5)}`;
-      const params = {
-        isImage: source.isImage,
-        seed: scene.seed,
-        maxCount: scene.maxCount,
-        radius: { ...scene.radius },
-        image: { ...shape.image },
-      };
-      const meta = { bw: source.bb.w, bh: source.bb.h, s0, isImage: source.isImage };
+      const { source, s0, key, params, meta } = await prepareJob(scene);
       let raster = null;
       const transfer = [];
       if (key !== workerKey) {

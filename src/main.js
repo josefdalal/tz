@@ -15,6 +15,7 @@ import { defaultScene, KINDS, toFile, fromFile, geometryKey } from './scenes/sch
 import { computeTransform, layoutHomes, applyTransformDelta, layoutColors } from './scenes/layout.js';
 import { orientationOf, safeRect, resolveLayout, containRect, previewOptions, LAYOUT_KEYS } from './scenes/frame.js';
 import { createFrameOverlay } from './ui/frameOverlay.js';
+import { createTransitionMode } from './transitions/mode.js';
 import { bakeGeometry, unbakeGeometry } from './scenes/bake.js';
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
 import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from './scenes/persist.js';
@@ -110,6 +111,7 @@ let geomVersion = 0;
 function applyGeometry(g) {
   geom = g;
   geomVersion++;
+  if (transition?.active) return; // במצב מעבר הגיאומטריה נשמרת, ותוחל ביציאה ממנו
   const nextT = computeTransform(g.meta, activeLayout(), safe);
   if (retarget(particles, g, nextT, poolRng, width, height)) renderer.rebind();
   T = nextT;
@@ -158,6 +160,10 @@ function onTransform() {
   const prevOrientation = orientation;
   updateFrame();
   if (orientation !== prevOrientation) gui?.syncLayout();
+  if (transition?.active) {
+    transition.onFrame();
+    return;
+  }
   if (!geom) return;
   const nextT = computeTransform(geom.meta, activeLayout(), safe);
   applyTransformDelta(particles, T, nextT);
@@ -280,19 +286,59 @@ const bake = {
   },
 };
 
+// ---------- מצב מעבר ----------
+
+const transition = createTransitionMode({
+  particles,
+  renderer,
+  rng: poolRng,
+  getFrame: () => ({ view, orientation, width, height }),
+  getCurrent: () => ({ scene, geom }),
+  onRebind: () => renderer.rebind(),
+  onEnter: () => {
+    lastBackground = '';
+    gui?.setTransitionMode(true);
+    overlay?.setMarker(transition.focusScreen);
+  },
+  onExit: () => {
+    gui?.setTransitionMode(false);
+    overlay?.setMarker(null);
+    applyPalette();
+    applyBackground();
+    // חזרה לסצנה הנערכת: התאמה מרחבית מהמצב הנוכחי, בלי קפיצה
+    if (geom) applyGeometry(geom);
+  },
+});
+
+const currentBackground = () => (transition.active ? transition.background : scene.palette.background);
+
+// לחיצה קצרה על הקנבס במצב מעבר בוחרת את נקודת המוקד (סדר לפי מרחק, איסוף לנקודה)
+let downAt = null;
+canvas.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!transition.active || !downAt) return;
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  if (moved < 6 && performance.now() - downAt.t < 400) {
+    transition.setFocus(e.clientX, e.clientY);
+    overlay?.setMarker(transition.focusScreen);
+    gui?.refreshTransition();
+  }
+  downAt = null;
+});
+
 // ייצוא המסגרת שבתצוגה. הגדרות הייצוא שייכות לעורך, לא לסצנה.
 const exportOpts = { multiplier: 2, transparent: false };
 const exportHooks = {
   opts: exportOpts,
   async png() {
     const m = Number(exportOpts.multiplier);
-    const blob = await framePNG(renderer, view, m, exportOpts.transparent, scene.palette.background);
+    const blob = await framePNG(renderer, view, m, exportOpts.transparent, currentBackground());
     const name = `${normalizeName(scene.id) ?? 'frame'}-${Math.round(view.w * m)}x${Math.round(view.h * m)}.png`;
     downloadBlob(blob, name);
     return `יוצא ${name}`;
   },
   svg() {
-    const { svg, count } = frameSVG(particles, renderer.lut, view, exportOpts.transparent, scene.palette.background);
+    const { svg, count } = frameSVG(particles, renderer.lut, renderer.lut2, view, exportOpts.transparent, currentBackground());
     const name = `${normalizeName(scene.id) ?? 'frame'}.svg`;
     downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), name);
     return `יוצא ${name} (${count} עיגולים)`;
@@ -331,6 +377,7 @@ const gui = createGui(scene, stats, {
   shapeFiles: shapeFileHooks,
   bake,
   exporter: exportHooks,
+  transition,
 });
 
 // קובץ צורה שהשתנה בדיסק (HMR) צריך דגימה מחדש אם הוא הצורה הנוכחית
@@ -359,7 +406,7 @@ loadGeometry();
 // לבדיקות ולדיבאג מהקונסול, רק בזמן פיתוח
 if (import.meta.env.DEV) {
   window.__tz = {
-    scene, particles, stats, physics,
+    scene, particles, stats, physics, transition,
     get geom() { return geom; },
     get geomVersion() { return geomVersion; },
     get view() { return view; },
@@ -369,6 +416,7 @@ if (import.meta.env.DEV) {
 // ---------- לולאת פריים ----------
 
 let last = performance.now();
+let lastBackground = '';
 let fpsFrames = 0;
 let fpsTime = 0;
 
@@ -376,8 +424,19 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
-  updateMotion(motion, particles, scene.motion, scene.seed, dt, safe.unit);
-  stepPhysics(physics, particles, scene.physics, dt, safe.unit, view);
+  if (transition.active) {
+    const f = transition.frame(dt);
+    updateMotion(motion, particles, f.motion, f.seed, dt, f.unit);
+    transition.afterMotion();
+    stepPhysics(physics, particles, f.physics, dt, f.unit, view);
+    if (f.background !== lastBackground) {
+      lastBackground = f.background;
+      renderer.setBackground(f.background);
+    }
+  } else {
+    updateMotion(motion, particles, scene.motion, scene.seed, dt, safe.unit);
+    stepPhysics(physics, particles, scene.physics, dt, safe.unit, view);
+  }
   renderer.render();
 
   fpsFrames++;

@@ -1,8 +1,11 @@
 import GUI from 'lil-gui';
 import { shapes } from '../shapes/library.js';
-import { sizeModes, mapByModes, maskByModes, KINDS } from '../scenes/schema.js';
+import { sizeModes, mapByModes, maskByModes, KINDS, PANEL_KINDS } from '../scenes/schema.js';
 import { MAX_POOL } from '../sim/particles.js';
 import { referenceOptions, previewOptions } from '../scenes/frame.js';
+import {
+  easeOptions, matchingModes, pathModes, arcDirections, orderModes,
+} from '../transitions/mode.js';
 
 export const guiEnabled = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 
@@ -87,13 +90,13 @@ export function createGui(scene, stats, hooks) {
   const fPresets = gui.addFolder('פריסטים');
   fPresets.add(ui, 'status').name('מצב').listen().disable();
   const nameCtrl = fPresets.add(ui, 'name').name('שם');
-  for (const kind of Object.keys(KINDS)) {
+  for (const kind of PANEL_KINDS) {
     fPresets.add({ go: () => run(() => presets.save(kind, ui.name)) }, 'go').name(`שמור ${KINDS[kind].label}`);
   }
   const loadUi = { scene: '', palette: '', motion: '' };
   const loadCtrls = {};
   const optionsFor = (kind) => ({ '': '', ...Object.fromEntries(presets.names(kind).map((n) => [n, n])) });
-  for (const kind of Object.keys(KINDS)) {
+  for (const kind of PANEL_KINDS) {
     loadCtrls[kind] = fPresets
       .add(loadUi, kind, optionsFor(kind))
       .name(`טען ${KINDS[kind].label}`)
@@ -108,7 +111,7 @@ export function createGui(scene, stats, hooks) {
       });
   }
   presets.onChange(() => {
-    for (const kind of Object.keys(KINDS)) loadCtrls[kind].options(optionsFor(kind));
+    for (const kind of PANEL_KINDS) loadCtrls[kind].options(optionsFor(kind));
   });
   fPresets.add({ go: () => run(presets.exportJSON) }, 'go').name('ייצוא JSON');
   fPresets.add({ go: () => run(presets.importJSON) }, 'go').name('ייבוא JSON');
@@ -270,6 +273,97 @@ export function createGui(scene, stats, hooks) {
   fExport.add({ go: () => run(exporter.png) }, 'go').name('ייצוא PNG');
   fExport.add({ go: () => run(exporter.svg) }, 'go').name('ייצוא SVG');
 
+  // ---------- מעבר ----------
+  const tr = hooks.transition;
+  const ts = tr.style;
+  const fTr = gui.addFolder('מעבר');
+  fTr.domElement.classList.add('tz-live');
+  const opts = (names) => Object.fromEntries(names.map((n) => [n, n]));
+  const aCtrl = fTr.add(tr.ui, 'a', opts(tr.sceneNames())).name('סצנה A');
+  const bCtrl = fTr.add(tr.ui, 'b', opts(tr.sceneNames())).name('סצנה B');
+  const enterBtn = fTr.add({ go: () => run(() => (tr.active ? tr.exit() : tr.enter())) }, 'go').name('כניסה למצב מעבר');
+  fTr.add(tr.ui, 'status').name('מצב').listen().disable();
+  fTr.add(tr.ui, 'counts').name('זוגות ועודפים').listen().disable();
+  fTr.add(tr.ui, 't', 0, 1, 0.001).name('t').listen();
+  const playBtn = fTr.add({ go: () => { tr.ui.playing = !tr.ui.playing; playBtn.name(tr.ui.playing ? 'עצירה' : 'ניגון'); } }, 'go').name('ניגון');
+  fTr.add(ts, 'duration', 0.2, 20, 0.1).name('משך s');
+  fTr.add(tr.ui, 'loop', { 'בלי': 'none', 'לולאה': 'loop', 'הלוך וחזור': 'pingpong' }).name('לולאה');
+  fTr.add(tr.ui, 'reversible').name('הפיכות').listen().disable();
+  const restyle = () => tr.onStyle();
+
+  const fMatch = fTr.addFolder('התאמה');
+  fMatch.add(ts.matching, 'mode', matchingModes).name('שיטה').onChange(restyle);
+  fMatch.add(ts.matching, 'seed', 0, 9999, 1).name('seed').onChange(restyle);
+
+  const fPath = fTr.addFolder('מסלול');
+  fPath.add(ts.path, 'mode', pathModes).name('סוג').onChange(restyle);
+  fPath.add(ts.path, 'curvature', -1.5, 1.5, 0.01).name('קשת: עקמומיות').onChange(restyle);
+  fPath.add(ts.path, 'direction', arcDirections).name('קשת: כיוון').onChange(restyle);
+  fPath.add(ts.path, 'noiseAmount', 0, 600, 1).name('noise: עוצמה').onChange(restyle);
+  fPath.add(ts.path, 'noiseScale', 0.0005, 0.02, 0.0005).name('noise: סקאלה').onChange(restyle);
+  fPath.add(ts.path, 'spread', 0, 1200, 1).name('התפזרות: רדיוס').onChange(restyle);
+  fPath.add(ts.path, 'gatherShrink', 0, 1, 0.01).name('איסוף: קנה רדיוס').onChange(restyle);
+
+  const fOrder = fTr.addFolder('סדר');
+  fOrder.add(ts.order, 'mode', orderModes).name('סדר לפי').onChange(restyle);
+  fOrder.add(ts.order, 'stagger', 0, 0.95, 0.01).name('stagger').onChange(restyle);
+  fOrder.add(ts.order, 'reverse').name('היפוך כיוון').onChange(restyle);
+  fOrder.add(ts.order, 'seed', 0, 9999, 1).name('seed').onChange(restyle);
+  const focusUi = { text: '' };
+  const focusCtrl = fOrder.add(focusUi, 'text').name('נקודה (לחיצה על המסך)').disable();
+
+  const fEnds = fTr.addFolder('עודפים וחוסרים');
+  fEnds.add(ts.leftovers, 'mode', { 'התכווצות במקום': 'shrink', 'יציאה מהמסך': 'exit', 'מיזוג לקרוב ב B': 'merge' }).name('עודפים ב A').onChange(restyle);
+  fEnds.add(ts.leftovers, 'angle', -180, 180, 1).name('כיוון יציאה').onChange(restyle);
+  fEnds.add(ts.spawns, 'mode', { 'צמיחה במקום': 'grow', 'פיצול מהקרוב ב A': 'split', 'כניסה מהקצוות': 'edges' }).name('חוסרים ב B').onChange(restyle);
+
+  const fEase = fTr.addFolder('easing ושכבת על');
+  fEase.add(ts, 'ease', easeOptions).name('easing (GSAP)').onChange(restyle);
+  fEase.add(ts.overlay, 'dip', 0, 1, 0.01).name('דעיכה בתעופה').onChange(restyle);
+  fEase.add(ts.overlay, 'sharpness', 0.1, 6, 0.05).name('חדות הדעיכה').onChange(restyle);
+
+  const fTrSave = fTr.addFolder('שמירה');
+  const trUi = { styleName: '', load: '', loadStyle: '' };
+  fTrSave.add({ go: () => run(tr.save) }, 'go').name('שמור מעבר (A__B)');
+  fTrSave.add(trUi, 'styleName').name('שם סגנון');
+  fTrSave.add({ go: () => run(() => tr.saveStyle(trUi.styleName)) }, 'go').name('שמור סגנון');
+  const loadTrCtrl = fTrSave.add(trUi, 'load', { '': '', ...opts(tr.transitionNames()) }).name('טען מעבר').onChange((n) => {
+    if (!n) return;
+    run(async () => { const m = await tr.load(n); refreshTransition(); return m; });
+    trUi.load = '';
+  });
+  const loadStyleCtrl = fTrSave.add(trUi, 'loadStyle', { '': '', ...opts(tr.styleNames()) }).name('טען סגנון').onChange((n) => {
+    if (!n) return;
+    run(() => { const m = tr.loadStyle(n); refreshTransition(); return m; });
+    trUi.loadStyle = '';
+  });
+  presets.onChange(() => {
+    aCtrl.options(opts(tr.sceneNames()));
+    bCtrl.options(opts(tr.sceneNames()));
+    loadTrCtrl.options({ '': '', ...opts(tr.transitionNames()) });
+    loadStyleCtrl.options({ '': '', ...opts(tr.styleNames()) });
+  });
+
+  function refreshTransition() {
+    focusUi.text = `${ts.focus[0].toFixed(2)}, ${ts.focus[1].toFixed(2)}`;
+    for (const c of fTr.controllersRecursive()) c.updateDisplay();
+  }
+  refreshTransition();
+
+  // במצב מעבר רק המעבר, המידע והייצוא פתוחים; עריכת הסצנה מוסתרת עד היציאה
+  const sceneFolders = [];
+  function setTransitionMode(on) {
+    for (const f of sceneFolders) f.show(!on);
+    enterBtn.name(on ? 'יציאה ממצב מעבר' : 'כניסה למצב מעבר');
+    aCtrl.enable(!on);
+    bCtrl.enable(!on);
+    if (!on) {
+      tr.ui.playing = false;
+      playBtn.name('ניגון');
+    }
+    refreshTransition();
+  }
+
   const geoFolders = [fSource, fRadius];
 
   function syncImageFolder() {
@@ -303,10 +397,13 @@ export function createGui(scene, stats, hooks) {
   }
   syncImageFolder();
   syncLock();
+  sceneFolders.push(fPresets, fBake, fSource, fRadius, fFrame, fLayout, fPalette, fMotion, fPhysics);
 
   return {
     refresh,
     syncLayout,
+    setTransitionMode,
+    refreshTransition,
     status: (s) => { ui.status = s; },
   };
 }

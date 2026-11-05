@@ -2,7 +2,7 @@ import { defineConfig, normalizePath } from 'vite';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const PRESET_FOLDERS = ['scenes', 'palettes', 'motions'];
+const PRESET_FOLDERS = ['scenes', 'palettes', 'motions', 'transitions', 'transition-styles'];
 const PRESET_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}$/u;
 // local/ אופציונלי: shapes/local לתמונות ניסיון, ב .gitignore
 const SHAPE_NAME_RE = /^(local\/)?[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}\.(svg|png|jpg|jpeg|webp)$/u;

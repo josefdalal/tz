@@ -30,7 +30,8 @@ function hilbert(x, y) {
   return d;
 }
 
-function sortByCurve(xs, ys, n, box) {
+/** אינדקסים 0..n-1 ממוינים לאורך עקומת הילברט בתוך box. משמש גם את עורך המעברים. */
+export function sortByCurve(xs, ys, n, box) {
   const N = (1 << ORDER) - 1;
   const sx = N / (box.x1 - box.x0 || 1);
   const sy = N / (box.y1 - box.y0 || 1);

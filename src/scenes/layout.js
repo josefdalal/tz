@@ -89,23 +89,30 @@ export function applyTransformDelta(p, from, to) {
   layoutHomes(p, to); // בלי הצטברות שגיאות לעיגולים שיש להם בית
 }
 
-/** colorT לפי mapBy, במרחב המקומי (הגרדיאנט מסתובב עם הצורה). */
-export function layoutColors(p, meta, mapBy) {
+/**
+ * colorT של עיגול אחד לפי mapBy, במרחב המקומי (הגרדיאנט מסתובב עם הצורה).
+ * משותף לסצנה רגילה ולשני הצדדים של מעבר.
+ */
+export function colorTFor(meta, mapBy, lx, ly, lr, edge, rand) {
   const hw = (meta.bw * meta.s0) / 2 || 1;
   const hh = (meta.bh * meta.s0) / 2 || 1;
-  const maxRad = Math.hypot(hw, hh);
-  const span = meta.rMax - meta.rMin;
-  const { localX, localY, localR, edge, rand, colorT } = p;
-  for (let i = 0; i < p.count; i++) {
-    let t;
-    switch (mapBy) {
-      case 'x': t = (localX[i] + hw) / (2 * hw); break;
-      case 'radius': t = span > 0 ? (localR[i] - meta.rMin) / span : 0.5; break;
-      case 'edge': t = edge[i]; break;
-      case 'radial': t = Math.hypot(localX[i], localY[i]) / maxRad; break;
-      case 'random': t = rand[i]; break;
-      default: t = (localY[i] + hh) / (2 * hh);
+  let t;
+  switch (mapBy) {
+    case 'x': t = (lx + hw) / (2 * hw); break;
+    case 'radius': {
+      const span = meta.rMax - meta.rMin;
+      t = span > 0 ? (lr - meta.rMin) / span : 0.5;
+      break;
     }
-    colorT[i] = t < 0 ? 0 : t > 1 ? 1 : t;
+    case 'edge': t = edge; break;
+    case 'radial': t = Math.hypot(lx, ly) / Math.hypot(hw, hh); break;
+    case 'random': t = rand; break;
+    default: t = (ly + hh) / (2 * hh);
   }
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+export function layoutColors(p, meta, mapBy) {
+  const { localX, localY, localR, edge, rand, colorT } = p;
+  for (let i = 0; i < p.count; i++) colorT[i] = colorTFor(meta, mapBy, localX[i], localY[i], localR[i], edge[i], rand[i]);
 }

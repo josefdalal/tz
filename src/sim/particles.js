@@ -19,8 +19,11 @@ const SCALAR_FIELDS = [
   'localX', 'localY', 'localR',
   'edge', // מרחק לשוליים, מנורמל 0 עד 1 (ל mapBy=edge)
   'rand', // מספר אקראי קבוע לעיגול (ל mapBy=random)
+  // מעבר בין סצנות (transitions/): צד B של הצבע, והתקדמות הצבע מ A ל B
+  'colorT2', 'imgMix2', 'colorU',
+  'overlayW', // משקל שכבת העל (תנועה פנימית, התנגשויות, עכבר): 1 בסצנה, דועך בתעופה
 ];
-const VEC3_FIELDS = ['imgColor']; // צבע מהתמונה, RGB בין 0 ל 1
+const VEC3_FIELDS = ['imgColor', 'imgColor2']; // צבע מהתמונה, RGB בין 0 ל 1 (צד A וצד B)
 
 export function createParticles(capacity) {
   const p = { capacity: 0, count: 0, active: 0 };
@@ -52,6 +55,7 @@ export function growParticles(p, needed, rng, width, height) {
     p.y[i] = p.homeY[i] = rng() * height;
     p.phase[i] = rng() * Math.PI * 2;
     p.pulse[i] = 1;
+    p.overlayW[i] = 1;
   }
   p.capacity = cap;
   return true;

@@ -3,6 +3,8 @@ import { buildPaletteLUT } from './palette.js';
 
 const LUT_SIZE = 256;
 
+// כל עיגול נושא שני צבעים: A (פלטה A וצבע תמונה) ו B (פלטה B וצבע תמונה), ו colorU
+// שמערבב ביניהם ב OKLCH. בסצנה רגילה colorU = 0 וצד B לא בשימוש.
 const vertexShader = /* glsl */ `
   attribute float aX;
   attribute float aY;
@@ -10,12 +12,16 @@ const vertexShader = /* glsl */ `
   attribute float aColorT;
   attribute vec3 aImgColor;
   attribute float aImgMix;
+  attribute float aColorT2;
+  attribute vec3 aImgColor2;
+  attribute float aImgMix2;
+  attribute float aColorU;
 
   varying vec2 vPx;      // היסט מהמרכז בפיקסלי CSS
   varying float vR;
-  varying float vColorT;
-  varying vec3 vImgColor;
-  varying float vImgMix;
+  varying vec4 vA;       // xyz: צבע תמונה A, w: ערבוב A
+  varying vec4 vB;       // xyz: צבע תמונה B, w: ערבוב B
+  varying vec3 vT;       // x: colorT A, y: colorT B, z: colorU
 
   void main() {
     if (aR < 0.01) {
@@ -23,9 +29,9 @@ const vertexShader = /* glsl */ `
       return;
     }
     vR = aR;
-    vColorT = aColorT;
-    vImgColor = aImgColor;
-    vImgMix = aImgMix;
+    vA = vec4(aImgColor, aImgMix);
+    vB = vec4(aImgColor2, aImgMix2);
+    vT = vec3(aColorT, aColorT2, aColorU);
     vPx = position.xy * (aR + 1.0); // פיקסל רזרבה לצורך החלקת שוליים
     vec2 p = vec2(aX, aY) + vPx;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 0.0, 1.0);
@@ -34,20 +40,68 @@ const vertexShader = /* glsl */ `
 
 const fragmentShader = /* glsl */ `
   uniform sampler2D uPalette;
+  uniform sampler2D uPalette2;
   uniform float uPixelRatio;
 
   varying vec2 vPx;
   varying float vR;
-  varying float vColorT;
-  varying vec3 vImgColor;
-  varying float vImgMix;
+  varying vec4 vA;
+  varying vec4 vB;
+  varying vec3 vT;
+
+  // sRGB <-> OKLab (Björn Ottosson). זהה ל src/render/oklab.js
+  vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+  vec3 toSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+  vec3 toOklab(vec3 srgb) {
+    vec3 c = toLinear(srgb);
+    vec3 lms = vec3(
+      0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b,
+      0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b,
+      0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b);
+    lms = pow(max(lms, 0.0), vec3(1.0 / 3.0));
+    return vec3(
+      0.2104542553 * lms.x + 0.7936177850 * lms.y - 0.0040720468 * lms.z,
+      1.9779984951 * lms.x - 2.4285922050 * lms.y + 0.4505937099 * lms.z,
+      0.0259040371 * lms.x + 0.7827717662 * lms.y - 0.8086757660 * lms.z);
+  }
+  vec3 fromOklab(vec3 lab) {
+    vec3 lms = vec3(
+      lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z,
+      lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z,
+      lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z);
+    lms = lms * lms * lms;
+    vec3 c = vec3(
+      4.0767416621 * lms.x - 3.3077115913 * lms.y + 0.2309699292 * lms.z,
+      -1.2684380046 * lms.x + 2.6097574011 * lms.y - 0.3413193965 * lms.z,
+      -0.0041960863 * lms.x - 0.7034186147 * lms.y + 1.7076147010 * lms.z);
+    return clamp(toSrgb(clamp(c, 0.0, 1.0)), 0.0, 1.0);
+  }
+  // אינטרפולציה ב OKLCH, גוון בדרך הקצרה. לצבע כמעט אפור אין גוון: לוקחים את של השני.
+  vec3 mixOklch(vec3 a, vec3 b, float u) {
+    vec3 la = toOklab(a);
+    vec3 lb = toOklab(b);
+    float ca = length(la.yz);
+    float cb = length(lb.yz);
+    float ha = atan(la.z, la.y);
+    float hb = atan(lb.z, lb.y);
+    if (ca < 0.002) ha = hb;
+    if (cb < 0.002) hb = ha;
+    float dh = mod(hb - ha + 3.14159265, 6.28318531) - 3.14159265;
+    float h = ha + dh * u;
+    float c = mix(ca, cb, u);
+    return fromOklab(vec3(mix(la.x, lb.x, u), c * cos(h), c * sin(h)));
+  }
 
   void main() {
     float d = length(vPx);
     float alpha = clamp((vR - d) * uPixelRatio + 0.5, 0.0, 1.0);
     if (alpha <= 0.0) discard;
-    vec3 col = texture2D(uPalette, vec2(vColorT, 0.5)).rgb;
-    col = mix(col, vImgColor, vImgMix);
+    vec3 colA = mix(texture2D(uPalette, vec2(vT.x, 0.5)).rgb, vA.xyz, vA.w);
+    vec3 col = colA;
+    if (vT.z > 0.0) {
+      vec3 colB = mix(texture2D(uPalette2, vec2(vT.y, 0.5)).rgb, vB.xyz, vB.w);
+      col = vT.z >= 1.0 ? colB : mixOklch(colA, colB, vT.z);
+    }
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -64,17 +118,24 @@ export function createRenderer(canvas, particles) {
   const quad = new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3);
   const index = [0, 1, 2, 0, 2, 3];
 
-  const lut = new Uint8Array(LUT_SIZE * 4);
-  const paletteTex = new THREE.DataTexture(lut, LUT_SIZE, 1, THREE.RGBAFormat);
-  paletteTex.magFilter = THREE.LinearFilter;
-  paletteTex.minFilter = THREE.LinearFilter;
-  paletteTex.wrapS = THREE.ClampToEdgeWrapping;
+  const makeLut = () => {
+    const data = new Uint8Array(LUT_SIZE * 4);
+    const tex = new THREE.DataTexture(data, LUT_SIZE, 1, THREE.RGBAFormat);
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    return { data, tex };
+  };
+  const pal1 = makeLut(); // פלטה A (או הפלטה היחידה בסצנה רגילה)
+  const pal2 = makeLut(); // פלטה B, רק במעבר
+  const lut = pal1.data;
 
   const material = new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
     uniforms: {
-      uPalette: { value: paletteTex },
+      uPalette: { value: pal1.tex },
+      uPalette2: { value: pal2.tex },
       uPixelRatio: { value: pixelRatio },
     },
     transparent: true,
@@ -106,10 +167,14 @@ export function createRenderer(canvas, particles) {
       aColorT: attr(particles.colorT, 1),
       aImgColor: attr(particles.imgColor, 3),
       aImgMix: attr(particles.imgMix, 1),
+      aColorT2: attr(particles.colorT2, 1),
+      aImgColor2: attr(particles.imgColor2, 3),
+      aImgMix2: attr(particles.imgMix2, 1),
+      aColorU: attr(particles.colorU, 1),
     };
     for (const [name, at] of Object.entries(a)) geometry.setAttribute(name, at);
-    dynamicAttrs = [a.aX, a.aY, a.aR];
-    colorAttrs = [a.aColorT, a.aImgColor, a.aImgMix];
+    dynamicAttrs = [a.aX, a.aY, a.aR, a.aColorU];
+    colorAttrs = [a.aColorT, a.aImgColor, a.aImgMix, a.aColorT2, a.aImgColor2, a.aImgMix2];
     mesh.geometry.dispose();
     mesh.geometry = geometry;
     colorsDirty = true;
@@ -134,8 +199,13 @@ export function createRenderer(canvas, particles) {
   }
 
   function setPalette(stops, space = 'oklch') {
-    buildPaletteLUT(stops, lut, LUT_SIZE, space);
-    paletteTex.needsUpdate = true;
+    buildPaletteLUT(stops, pal1.data, LUT_SIZE, space);
+    pal1.tex.needsUpdate = true;
+  }
+
+  function setPalette2(stops, space = 'oklch') {
+    buildPaletteLUT(stops, pal2.data, LUT_SIZE, space);
+    pal2.tex.needsUpdate = true;
   }
 
   function setBackground(color) {
@@ -208,10 +278,12 @@ export function createRenderer(canvas, particles) {
   return {
     resize,
     setPalette,
+    setPalette2,
     setBackground,
     render,
     capture,
     lut, // טבלת הצבעים הנוכחית (RGBA, 256 ערכים), לייצוא SVG
+    lut2: pal2.data, // פלטה B במעבר
     rebind: bind,
     invalidateColors: () => { colorsDirty = true; },
     three: renderer,

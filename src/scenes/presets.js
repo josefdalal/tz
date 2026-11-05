@@ -12,10 +12,12 @@ const files = {
   scene: import.meta.glob('/scenes/*.json', { eager: true, import: 'default' }),
   palette: import.meta.glob('/palettes/*.json', { eager: true, import: 'default' }),
   motion: import.meta.glob('/motions/*.json', { eager: true, import: 'default' }),
+  transition: import.meta.glob('/transitions/*.json', { eager: true, import: 'default' }),
+  transitionStyle: import.meta.glob('/transition-styles/*.json', { eager: true, import: 'default' }),
 };
 
-/** @type {{scene: Record<string, object>, palette: Record<string, object>, motion: Record<string, object>}} */
-export const registry = import.meta.hot?.data.registry ?? { scene: {}, palette: {}, motion: {} };
+/** @type {Record<string, Record<string, object>>} סוג אל (שם אל קובץ) */
+export const registry = import.meta.hot?.data.registry ?? {};
 const listeners = import.meta.hot?.data.listeners ?? new Set();
 if (import.meta.hot) {
   import.meta.hot.data.registry = registry;

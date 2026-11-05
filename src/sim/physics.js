@@ -70,8 +70,8 @@ export function stepPhysics(ph, p, cfg, dt, unit, view) {
   const n = p.active;
   const { x, y, vx, vy, homeX, homeY, offX, offY, r, targetR, pulse, drawR } = p;
 
-  // רדיוס: התקרבות ליעד, ורדיוס מצויר עם פעימה
-  const kr = 1 - Math.exp(-dt * RADIUS_RATE);
+  // רדיוס: התקרבות ליעד, ורדיוס מצויר עם פעימה. במעבר הרדיוס טהור (cfg.pureRadius): r = targetR.
+  const kr = cfg.pureRadius ? 1 : 1 - Math.exp(-dt * RADIUS_RATE);
   let lastVisible = -1;
   for (let i = 0; i < n; i++) {
     r[i] += (targetR[i] - r[i]) * kr;
@@ -140,7 +140,7 @@ export function stepPhysics(ph, p, cfg, dt, unit, view) {
 }
 
 function pushFromPointer(ph, p, n, pointer, mr, strength, rad) {
-  const { x, y } = p;
+  const { x, y, overlayW } = p;
   const press = ph.press;
   const px = pointer.x;
   const py = pointer.y;
@@ -153,7 +153,7 @@ function pushFromPointer(ph, p, n, pointer, mr, strength, rad) {
     const d2 = dx * dx + dy * dy;
     if (d2 >= R * R) continue;
     const d = Math.sqrt(d2) || 1e-3;
-    const push = ((R - d) * strength) / d;
+    const push = ((R - d) * strength * overlayW[i]) / d;
     x[i] += dx * push;
     y[i] += dy * push;
     press[i] = 1;
@@ -195,6 +195,8 @@ function buildGrid(ph, p, n, rad, view) {
         s = 1 - t * t * (3 - 2 * t);
       }
     }
+    // במעבר: שכבת העל דועכת בזמן תעופה (overlayW = 1 בסצנה רגילה)
+    s *= p.overlayW[i];
     solid[i] = s;
     if (s === 0) {
       cellOf[i] = -1; // רוח מלאה: לא נכנס לרשת בכלל
