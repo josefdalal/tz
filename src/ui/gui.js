@@ -399,6 +399,9 @@ export function createGui(scene, stats, hooks) {
   syncLock();
   sceneFolders.push(fPresets, fBake, fSource, fRadius, fFrame, fLayout, fPalette, fMotion, fPhysics);
 
+  // כל התיקיות מתחילות סגורות, כולל תתי תיקיות. הפאנל עצמו פתוח, כדי שהכותרות ייראו.
+  for (const f of gui.foldersRecursive()) f.close();
+
   return {
     refresh,
     syncLayout,
