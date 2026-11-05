@@ -3,8 +3,12 @@
   "tasks": [
     {
       "label": "dev",
-      "type": "npm",
-      "script": "dev",
+      "type": "shell",
+      "command": "npm run dev",
+      // דרך cmd ולא PowerShell: מדיניות ההרצה של PowerShell חוסמת את npm.ps1
+      "options": {
+        "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
+      },
       "isBackground": true,
       "problemMatcher": {
         "owner": "vite",
