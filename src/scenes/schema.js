@@ -114,14 +114,22 @@ export const defaultTransitionStyle = {
   order: { mode: 'none', stagger: 0.4, reverse: false, seed: 1 }, // none, x, y, distance, radius, color, random
   focus: [0.5, 0.5], // נקודה במסגרת (0 עד 1): ל order=distance ול path=gather
   leftovers: { mode: 'shrink', angle: -90 }, // עודפים ב A: shrink, exit (בכיוון angle), merge
-  spawns: { mode: 'grow' }, // חוסרים ב B: grow, split, edges
+  spawns: { mode: 'grow', angle: 90 }, // חוסרים ב B: grow, split, edges, direction (נכנסים בכיוון angle)
   ease: 'power2.inOut', // easing של GSAP, לכל עיגול
   overlay: { dip: 1, sharpness: 1 }, // שכבת העל (תנועה, התנגשויות) בזמן תעופה: 1 - dip * sin(πu)^sharpness
   duration: 2.5, // שניות, לניגון בעורך
 };
 
-// מעבר שמור: זוג סצנות וסגנון. נשמר כ transitions/<from>__<to>.json
-export const defaultTransition = { from: '', to: '', ...defaultTransitionStyle };
+// גלילה: איך גלגלת ומשטח מגע מזיזים את t. שייך למעבר (לא לסגנון), כי זה עניין של
+// הסטוריבורד; הנגן ישתמש באותם ערכים.
+export const defaultScroll = {
+  distance: 1200, // כמה פיקסלי גלילה שווים מעבר שלם (0 עד 1)
+  smoothing: 0.12, // חלק מהמרחק ליעד שנסגר בכל פריים של 60Hz, כמו lerp של Lenis. קטן = חלק יותר
+  snapDelay: 350, // מילישניות בלי גלילה עד הנצמדות ל 0 או ל 1
+};
+
+// מעבר שמור: זוג סצנות, סגנון וגלילה. נשמר כ transitions/<from>__<to>.json
+export const defaultTransition = { from: '', to: '', scroll: defaultScroll, ...defaultTransitionStyle };
 
 // סוגי פריסטים. scene מכיל גם palette ו motion. panel: false = לא בתיקיית "פריסטים" אלא
 // בתיקיית "מעבר" של העורך.

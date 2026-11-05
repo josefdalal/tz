@@ -285,11 +285,29 @@ export function createGui(scene, stats, hooks) {
   fTr.add(tr.ui, 'status').name('מצב').listen().disable();
   fTr.add(tr.ui, 'counts').name('זוגות ועודפים').listen().disable();
   fTr.add(tr.ui, 't', 0, 1, 0.001).name('t').listen();
-  const playBtn = fTr.add({ go: () => { tr.ui.playing = !tr.ui.playing; playBtn.name(tr.ui.playing ? 'עצירה' : 'ניגון'); } }, 'go').name('ניגון');
+  const playBtn = fTr.add({ go: () => {
+    tr.ui.playing = !tr.ui.playing;
+    if (tr.ui.playing) tr.ui.scrollOn = false; // ניגון וגלילה לא פועלים יחד
+    playBtn.name(tr.ui.playing ? 'עצירה' : 'ניגון');
+    refreshTransition();
+  } }, 'go').name('ניגון');
   fTr.add(ts, 'duration', 0.2, 20, 0.1).name('משך s');
   fTr.add(tr.ui, 'loop', { 'בלי': 'none', 'לולאה': 'loop', 'הלוך וחזור': 'pingpong' }).name('לולאה');
   fTr.add(tr.ui, 'reversible').name('הפיכות').listen().disable();
   const restyle = () => tr.onStyle();
+
+  // תצוגת גלילה: הגלגלת מעל הקנבס מזיזה את t. הפרמטרים נשמרים בקובץ המעבר (לנגן).
+  const fScroll = fTr.addFolder('גלילה');
+  fScroll.add(tr.ui, 'scrollOn').name('גלילה').onChange((on) => {
+    if (on) {
+      tr.ui.playing = false;
+      playBtn.name('ניגון');
+    }
+  });
+  fScroll.add(tr.scroll, 'distance', 100, 6000, 10).name('גלילה למעבר שלם px');
+  fScroll.add(tr.scroll, 'smoothing', 0.01, 1, 0.01).name('החלקה (קטן = חלק)');
+  fScroll.add(tr.scroll, 'snapDelay', 0, 2000, 10).name('השהיה לנצמדות ms');
+  fScroll.add(tr.ui, 'scrollTarget').name('יעד').listen().disable();
 
   const fMatch = fTr.addFolder('התאמה');
   fMatch.add(ts.matching, 'mode', matchingModes).name('שיטה').onChange(restyle);
@@ -315,7 +333,10 @@ export function createGui(scene, stats, hooks) {
   const fEnds = fTr.addFolder('עודפים וחוסרים');
   fEnds.add(ts.leftovers, 'mode', { 'התכווצות במקום': 'shrink', 'יציאה מהמסך': 'exit', 'מיזוג לקרוב ב B': 'merge' }).name('עודפים ב A').onChange(restyle);
   fEnds.add(ts.leftovers, 'angle', -180, 180, 1).name('כיוון יציאה').onChange(restyle);
-  fEnds.add(ts.spawns, 'mode', { 'צמיחה במקום': 'grow', 'פיצול מהקרוב ב A': 'split', 'כניסה מהקצוות': 'edges' }).name('חוסרים ב B').onChange(restyle);
+  fEnds.add(ts.spawns, 'mode', {
+    'צמיחה במקום': 'grow', 'פיצול מהקרוב ב A': 'split', 'כניסה מהקצוות': 'edges', 'כניסה מכיוון': 'direction',
+  }).name('חוסרים ב B').onChange(restyle);
+  fEnds.add(ts.spawns, 'angle', -180, 180, 1).name('כיוון כניסה').onChange(restyle);
 
   const fEase = fTr.addFolder('easing ושכבת על');
   fEase.add(ts, 'ease', easeOptions).name('easing (GSAP)').onChange(restyle);

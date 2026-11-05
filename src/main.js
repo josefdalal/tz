@@ -312,6 +312,11 @@ const transition = createTransitionMode({
 
 const currentBackground = () => (transition.active ? transition.background : scene.palette.background);
 
+// תצוגת גלילה במצב מעבר: גלגלת ומשטח מגע מעל הקנבס מזיזים את t (מעל הפאנל הוא נגלל כרגיל)
+window.addEventListener('wheel', (e) => {
+  if (e.target === canvas && transition.onWheel(e)) e.preventDefault();
+}, { passive: false });
+
 // לחיצה קצרה על הקנבס במצב מעבר בוחרת את נקודת המוקד (סדר לפי מרחק, איסוף לנקודה)
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; });

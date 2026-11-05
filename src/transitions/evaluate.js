@@ -65,6 +65,13 @@ export function resolveEndpoints(prep, A, B, style, view, ends) {
         if (len < 1e-3) { dx = 0; dy = -1; } else { dx /= len; dy /= len; }
         const d = exitDistance(B.x[b], B.y[b], dx, dy, view) + B.r[b] + MARGIN;
         ends.x0[s] = B.x[b] + dx * d; ends.y0[s] = B.y[b] + dy * d; ends.r0[s] = B.r[b];
+      } else if (mode === 'direction') {
+        // נכנסים בכיוון angle: מתחילים מחוץ למסגרת, מהצד שממנו הכיוון מגיע
+        const sa = (style.spawns.angle * Math.PI) / 180;
+        const dx = -Math.cos(sa);
+        const dy = -Math.sin(sa);
+        const d = exitDistance(B.x[b], B.y[b], dx, dy, view) + B.r[b] + MARGIN;
+        ends.x0[s] = B.x[b] + dx * d; ends.y0[s] = B.y[b] + dy * d; ends.r0[s] = B.r[b];
       } else if (mode === 'split' && near[s] >= 0) {
         ends.x0[s] = A.x[near[s]]; ends.y0[s] = A.y[near[s]]; ends.r0[s] = 0;
       } else {
