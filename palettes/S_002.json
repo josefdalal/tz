@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "type": "palette",
+  "space": "oklch",
+  "stops": [
+    "#208df3",
+    "#27912e",
+    "#d629b1"
+  ],
+  "mapBy": "random",
+  "background": "#f3efe6"
+}
