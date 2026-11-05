@@ -49,7 +49,34 @@ export const defaultScene = {
   enter: { mode: 'fromCenter' },
   exit: { mode: 'disperse', strength: 1.0 },
   render: { mode: 'flat', lightDir: [-0.4, -0.6, 0.7] },
+  // גיאומטריה אפויה (bake.js), או null. כשקיימת, פרמטרי הגיאומטריה נעולים.
+  baked: null,
 };
+
+// הפרדה בין פרמטרי גיאומטריה (שינוי מחייב דגימה ב worker) לפרמטרים חיים (כל השאר:
+// טרנספורמציה, צבע, תנועה, פיזיקה, רקע). פרמטר חי אף פעם לא מפעיל דגימה.
+// shape.image.colorMix חי, למרות שהוא יושב תחת shape.image.
+const GEOMETRY_PATHS = [
+  'seed',
+  'maxCount',
+  'shape.type',
+  'shape.d',
+  'shape.fillRule',
+  'shape.src',
+  'shape.image.maskBy',
+  'shape.image.threshold',
+  'shape.image.invert',
+  'shape.image.sizeAmount',
+  'shape.image.sizeInvert',
+  'radius',
+];
+
+const get = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
+
+/** מחרוזת שמשתנה אם ורק אם פרמטר גיאומטריה השתנה. */
+export function geometryKey(scene) {
+  return JSON.stringify(GEOMETRY_PATHS.map((p) => get(scene, p)));
+}
 
 export const sizeModes = ['random', 'edgeDistance', 'noise'];
 export const mapByModes = ['y', 'x', 'radius', 'edge', 'radial', 'random'];

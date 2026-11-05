@@ -3,7 +3,12 @@
 // כמו presets.js: import.meta.glob עם ?url, כך שהקבצים נכנסים לבנייה, ו HMR שמעדכן את
 // אותו מאגר כשקובץ חדש נשמר. בבנייה אין לאן לשמור, ולכן העלאה יוצרת כתובת blob לסשן בלבד.
 
-const urls = import.meta.glob('/shapes/*.{svg,png,jpg,jpeg,webp}', { eager: true, query: '?url', import: 'default' });
+// shapes/local: תמונות ניסיון, ב .gitignore. השם שלהן ברשימה מתחיל ב local/
+const urls = {
+  ...import.meta.glob('/shapes/*.{svg,png,jpg,jpeg,webp}', { eager: true, query: '?url', import: 'default' }),
+  ...import.meta.glob('/shapes/local/*.{svg,png,jpg,jpeg,webp}', { eager: true, query: '?url', import: 'default' }),
+};
+const nameOf = (path) => path.replace(/^\/shapes\//, '');
 
 /** @type {Record<string, string>} שם קובץ אל כתובת */
 export const shapeFiles = import.meta.hot?.data.shapeFiles ?? {};
@@ -21,7 +26,7 @@ for (const name of Object.keys(shapeFiles)) if (!shapeFiles[name].startsWith('bl
 const bust = import.meta.env.DEV ? `t=${Date.now()}` : '';
 for (const [path, url] of Object.entries(urls)) {
   const busted = bust && !url.startsWith('data:') ? `${url}${url.includes('?') ? '&' : '?'}${bust}` : url;
-  shapeFiles[path.split('/').pop()] = busted;
+  shapeFiles[nameOf(path)] = busted;
 }
 listeners.forEach((fn) => fn());
 
@@ -58,7 +63,7 @@ export async function uploadShapeFile(file, name) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
   // הכתובת בזמן פיתוח ידועה מראש. t מבטיח שקובץ שנדרס לא יילקח ממטמון התמונות.
-  shapeFiles[name] = `/shapes/${encodeURIComponent(name)}?t=${Date.now()}`;
+  shapeFiles[name] = `/shapes/${name.split('/').map(encodeURIComponent).join('/')}?t=${Date.now()}`;
   listeners.forEach((fn) => fn());
   return { name, persisted: true };
 }

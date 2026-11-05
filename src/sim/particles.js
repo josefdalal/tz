@@ -8,13 +8,17 @@
 export const MAX_POOL = 30000;
 const GROW_STEP = 1000;
 
-// שדות סקלריים, וערך התחלתי לשדות שלא מתחילים באפס
+// שדות סקלריים
 const SCALAR_FIELDS = [
   'x', 'y', 'vx', 'vy', 'homeX', 'homeY', 'r', 'targetR', 'colorT', 'phase',
   'offX', 'offY', // תנועה פנימית: היסט מנקודת הבית
   'pulse', // מכפיל פעימה של הרדיוס
   'drawR', // הרדיוס שמצויר בפועל: r * pulse
   'imgMix', // 0 צבע מהספקטרום, 1 צבע מהתמונה
+  // יעד הגיאומטריה במרחב המקומי של הצורה (layout.js הופך אותם ל homeX, homeY, targetR)
+  'localX', 'localY', 'localR',
+  'edge', // מרחק לשוליים, מנורמל 0 עד 1 (ל mapBy=edge)
+  'rand', // מספר אקראי קבוע לעיגול (ל mapBy=random)
 ];
 const VEC3_FIELDS = ['imgColor']; // צבע מהתמונה, RGB בין 0 ל 1
 
@@ -53,30 +57,8 @@ export function growParticles(p, needed, rng, width, height) {
   return true;
 }
 
-/**
- * מקצה נקודות בית מתוצאת הדגימה. עיגולים עודפים מקבלים רדיוס יעד אפס ונעלמים במקום.
- * @param {number} imgMix ערבוב צבע התמונה, רק כשלדגימה יש צבעים (samples.rgb)
- */
-export function assignHomes(p, samples, imgMix = 0) {
-  const n = Math.min(samples.count, p.capacity);
-  const rgb = samples.rgb;
-  for (let i = 0; i < n; i++) {
-    p.homeX[i] = samples.x[i];
-    p.homeY[i] = samples.y[i];
-    p.targetR[i] = samples.r[i];
-    p.colorT[i] = samples.colorT[i];
-    if (rgb) {
-      p.imgColor[i * 3] = rgb[i * 3];
-      p.imgColor[i * 3 + 1] = rgb[i * 3 + 1];
-      p.imgColor[i * 3 + 2] = rgb[i * 3 + 2];
-    }
-    p.imgMix[i] = rgb ? imgMix : 0;
-  }
-  for (let i = n; i < p.active; i++) p.targetR[i] = 0;
-  p.count = n;
-  p.active = Math.max(p.active, n);
-  return n;
-}
+// שדות "מצב" של עיגול: עוברים איתו כשהוא משנה slot בהתאמה מרחבית (match.js)
+export const STATE_FIELDS = ['x', 'y', 'vx', 'vy', 'r', 'phase', 'offX', 'offY', 'pulse', 'drawR'];
 
 /** עדכון חי של מחוון הערבוב, בלי דגימה מחדש. */
 export function setImageMix(p, mix) {

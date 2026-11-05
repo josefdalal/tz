@@ -1,10 +1,18 @@
-import { createParticles, growParticles, assignHomes, setImageMix, MAX_POOL } from './sim/particles.js';
+// חיבור המערכות. שני מסלולים נפרדים:
+//   גיאומטריה: פרמטר דגימה השתנה, נשלחת בקשה ל worker (debounce). התוצאה (במרחב המקומי)
+//              מוחלפת עם התאמה מרחבית (match.js): העיגולים זורמים לבתים קרובים.
+//   חי:        טרנספורמציה, צבע, תנועה, רקע. מחושבים מהגיאומטריה הקיימת, בלי דגימה.
+// סצנה אפויה (scene.baked) משמשת כגיאומטריה במקום ה worker.
+
+import { createParticles, growParticles, setImageMix, MAX_POOL } from './sim/particles.js';
 import { relax } from './sim/physics.js';
 import { createMotion, updateMotion } from './sim/motion.js';
-import { sampleScene } from './shapes/sampler.js';
-import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName, isSvgName } from './shapes/files.js';
-import { loadShapeImage } from './shapes/images.js';
-import { defaultScene, KINDS, toFile, fromFile } from './scenes/schema.js';
+import { retarget } from './sim/match.js';
+import { createSampler } from './shapes/sampling.js';
+import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName } from './shapes/files.js';
+import { defaultScene, KINDS, toFile, fromFile, geometryKey } from './scenes/schema.js';
+import { computeTransform, layoutHomes, applyTransformDelta, layoutColors } from './scenes/layout.js';
+import { bakeGeometry, unbakeGeometry } from './scenes/bake.js';
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from './scenes/presets.js';
 import { loadLocal, saveLocal, clearLocal, downloadJSON, pickJSONFile, pickFile } from './scenes/persist.js';
 import { createRenderer } from './render/renderer.js';
@@ -35,79 +43,99 @@ const poolRng = mulberry32(scene.seed + 1);
 const particles = createParticles();
 growParticles(particles, Math.min(MAX_POOL, scene.maxCount), poolRng, width, height);
 const renderer = createRenderer(canvas, particles);
-const stats = { count: 0, pool: particles.capacity, sampleMs: 0, fps: 0 };
+const stats = { count: 0, pool: particles.capacity, sampling: '', sampleMs: 0, fps: 0 };
 const motion = createMotion(scene.seed);
 renderer.resize(width, height);
 
-let needsResample = true;
-const requestResample = () => { needsResample = true; };
+// ---------- גיאומטריה ----------
 
-// דגימה אסינכרונית: קובץ צורה נטען לפני הדגימה. רק הבקשה האחרונה מוחלת.
-let resampleToken = 0;
-async function resample() {
-  const token = ++resampleToken;
-  let image = null;
-  const sh = scene.shape;
-  if (sh.type === 'image') {
-    const url = shapeFiles[sh.src];
-    if (!url) {
-      gui?.status(`קובץ צורה לא נמצא: ${sh.src}`);
-    } else {
-      try {
-        image = await loadShapeImage(url, isSvgName(sh.src));
-      } catch (e) {
-        gui?.status(`שגיאה בטעינת ${sh.src}: ${e.message}`);
-      }
-    }
-    if (token !== resampleToken) return;
-  }
-  const samples = sampleScene(scene, width, height, image);
-  if (growParticles(particles, samples.count, poolRng, width, height)) renderer.rebind();
-  stats.count = assignHomes(particles, samples, sh.image.colorMix);
+let geom = null; // הגיאומטריה הנוכחית במרחב המקומי
+let T = null; // הטרנספורמציה הנוכחית אל המסך
+let lastGeomKey = null;
+let geomVersion = 0;
+
+function applyGeometry(g) {
+  geom = g;
+  geomVersion++;
+  const nextT = computeTransform(g.meta, scene.shape, width, height);
+  if (retarget(particles, g, nextT, poolRng, width, height)) renderer.rebind();
+  T = nextT;
+  layoutHomes(particles, T);
+  applyColors();
+  stats.count = particles.count;
   stats.pool = particles.capacity;
-  stats.sampleMs = Math.round(samples.ms);
-  renderer.invalidateColors();
 }
 
-const applyImageMix = () => {
-  if (scene.shape.type !== 'image') return;
-  setImageMix(particles, scene.shape.image.colorMix);
-  renderer.invalidateColors();
-};
-
-const shapeFileHooks = {
-  names: shapeFileNames,
-  onChange: onShapeFilesChange,
-  async upload() {
-    const file = await pickFile('.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp');
-    if (!file) return '';
-    const name = normalizeFileName(file.name);
-    if (!name) throw new Error('שם קובץ לא תקין: אותיות, ספרות, _ ו - בלבד, עם סיומת svg, png, jpg או webp');
-    if (shapeFiles[name] && !confirm(`הקובץ ${name} כבר קיים ב shapes. לדרוס?`)) return '';
-    const { persisted } = await uploadShapeFile(file, name);
-    scene.shape.type = 'image';
-    scene.shape.src = name;
-    // לקובץ בלי שקיפות, מסכה לפי בהירות היא ברירת המחדל הסבירה
-    if (/\.jpe?g$/.test(name)) scene.shape.image.maskBy = 'luminance';
-    requestResample();
-    return persisted ? `נשמר shapes/${name}` : `${name} נטען לסשן בלבד (אין שרת פיתוח)`;
+const sampler = createSampler(
+  () => ({ scene, width, height }),
+  (g) => {
+    if (scene.baked) return; // נאפה בזמן שהדגימה רצה
+    stats.sampleMs = Math.round(g.ms);
+    applyGeometry(g);
   },
-};
+  (s) => {
+    stats.sampling = s === 'busy' ? 'מחשב...' : s === 'idle' ? 'מוכן' : s;
+    if (s.startsWith('שגיאה')) gui?.status(s);
+  },
+);
+
+/** פרמטר גיאומטריה השתנה. נעול כשהסצנה אפויה; לא שולח אם שום דבר גיאומטרי לא השתנה. */
+function onGeometry({ force = false } = {}) {
+  if (scene.baked) return;
+  const key = geometryKey(scene);
+  if (!force && key === lastGeomKey) return;
+  lastGeomKey = key;
+  sampler.request();
+}
+
+function loadGeometry() {
+  if (scene.baked) {
+    lastGeomKey = null;
+    stats.sampling = 'אפוי';
+    applyGeometry(unbakeGeometry(scene.baked));
+  } else {
+    onGeometry({ force: true });
+  }
+}
+
+// ---------- חי ----------
+
+function onTransform() {
+  if (!geom) return;
+  const nextT = computeTransform(geom.meta, scene.shape, width, height);
+  applyTransformDelta(particles, T, nextT);
+  T = nextT;
+}
+
+function applyColors() {
+  if (!geom) return;
+  layoutColors(particles, geom.meta, scene.palette.mapBy);
+  setImageMix(particles, geom.rgb ? scene.shape.image.colorMix : 0);
+  renderer.invalidateColors();
+}
 
 const applyPalette = () => renderer.setPalette(scene.palette.stops, scene.palette.space);
 const applyBackground = () => renderer.setBackground(scene.palette.background);
 applyPalette();
 applyBackground();
 
+// ---------- טעינה, פריסטים, אפייה ----------
+
 // החלת נתונים טעונים על הסצנה החיה, במקום, כדי שהפאנל ימשיך להצביע על אותם אובייקטים
 function applyLoaded(kind, data) {
-  if (kind === 'scene') assignInPlace(scene, data);
-  else assignInPlace(scene[kind], data);
-  if (kind !== 'motion') {
-    applyPalette();
-    applyBackground();
-    requestResample();
+  if (kind === 'scene') {
+    assignInPlace(scene, data);
+    scene.baked = data.baked ?? null; // assignInPlace לא מחליף אובייקט ב null
+  } else {
+    assignInPlace(scene[kind], data);
   }
+  applyPalette();
+  applyBackground();
+  if (kind === 'scene') {
+    onTransform();
+    loadGeometry();
+  }
+  applyColors();
   gui?.refresh();
 }
 
@@ -149,35 +177,87 @@ const presets = {
   },
 };
 
+const sourceAvailable = () =>
+  scene.shape.type === 'image' ? !!shapeFiles[scene.shape.src] : !!scene.shape.d;
+
+const bake = {
+  bake() {
+    if (scene.baked) return 'כבר אפוי';
+    if (!geom || sampler.isBusy()) throw new Error('הדגימה עדיין רצה, נסה שוב בעוד רגע');
+    scene.baked = bakeGeometry(geom);
+    stats.sampling = 'אפוי';
+    return `נאפו ${geom.count} עיגולים`;
+  },
+  unbake() {
+    if (!scene.baked) return 'לא אפוי';
+    if (!sourceAvailable()) throw new Error(`המקור לא זמין (${scene.shape.src || 'path ריק'}), האפייה נשארת`);
+    scene.baked = null;
+    onGeometry({ force: true });
+    return 'חוזר למקור';
+  },
+};
+
+const shapeFileHooks = {
+  names: shapeFileNames,
+  onChange: onShapeFilesChange,
+  async upload(local) {
+    const file = await pickFile('.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp');
+    if (!file) return '';
+    const base = normalizeFileName(file.name);
+    if (!base) throw new Error('שם קובץ לא תקין: אותיות, ספרות, _ ו - בלבד, עם סיומת svg, png, jpg או webp');
+    const name = local ? `local/${base}` : base;
+    if (shapeFiles[name] && !confirm(`הקובץ ${name} כבר קיים. לדרוס?`)) return '';
+    const { persisted } = await uploadShapeFile(file, name);
+    scene.shape.type = 'image';
+    scene.shape.src = name;
+    // לקובץ בלי שקיפות, מסכה לפי בהירות היא ברירת המחדל הסבירה
+    if (/\.jpe?g$/.test(name)) scene.shape.image.maskBy = 'luminance';
+    onGeometry({ force: true });
+    if (!persisted) return `${name} נטען לסשן בלבד (אין שרת פיתוח)`;
+    return local ? `נשמר shapes/${name} (לא נכנס לריפו)` : `נשמר shapes/${name}`;
+  },
+};
+
 const gui = createGui(scene, stats, {
-  onResample: requestResample,
+  onGeometry: () => onGeometry(),
+  onTransform,
+  onColors: applyColors,
   onPalette: applyPalette,
   onBackground: applyBackground,
-  onImageMix: applyImageMix,
   presets,
   shapeFiles: shapeFileHooks,
+  bake,
 });
 
 // קובץ צורה שהשתנה בדיסק (HMR) צריך דגימה מחדש אם הוא הצורה הנוכחית
 onShapeFilesChange(() => {
-  if (scene.shape.type === 'image') requestResample();
+  if (scene.shape.type === 'image') onGeometry({ force: true });
 });
 
-// שמירה אוטומטית של המצב הנוכחי, רק כשהפאנל פעיל (גולשים רואים תמיד את הסצנה שנבנתה)
+// שמירה אוטומטית של המצב הנוכחי, רק כשהפאנל פעיל (גולשים רואים תמיד את הסצנה שנבנתה).
+// האפייה נשמרת בנפרד ורק כשהיא מתחלפת.
 if (guiEnabled) {
-  const autosave = () => saveLocal(toFile('scene', scene));
+  const autosave = () => saveLocal(toFile('scene', { ...scene, baked: null }), scene.baked);
   setInterval(autosave, 1000);
   window.addEventListener('pagehide', autosave);
 }
 
-let resizeTimer = 0;
+// שינוי גודל החלון הוא טרנספורמציה חיה, לא דגימה
 window.addEventListener('resize', () => {
   width = window.innerWidth;
   height = window.innerHeight;
   renderer.resize(width, height);
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(requestResample, 150);
+  onTransform();
 });
+
+loadGeometry();
+
+// לבדיקות ולדיבאג מהקונסול, רק בזמן פיתוח
+if (import.meta.env.DEV) {
+  window.__tz = { scene, particles, stats, get geom() { return geom; }, get geomVersion() { return geomVersion; } };
+}
+
+// ---------- לולאת פריים ----------
 
 let last = performance.now();
 let fpsFrames = 0;
@@ -186,11 +266,6 @@ let fpsTime = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-
-  if (needsResample) {
-    needsResample = false;
-    resample();
-  }
 
   updateMotion(motion, particles, scene.motion, scene.seed, dt);
   relax(particles, dt);

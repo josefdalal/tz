@@ -4,7 +4,8 @@ import path from 'node:path';
 
 const PRESET_FOLDERS = ['scenes', 'palettes', 'motions'];
 const PRESET_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}$/u;
-const SHAPE_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}\.(svg|png|jpg|jpeg|webp)$/u;
+// local/ אופציונלי: shapes/local לתמונות ניסיון, ב .gitignore
+const SHAPE_NAME_RE = /^(local\/)?[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}\.(svg|png|jpg|jpeg|webp)$/u;
 const MAX_JSON = 1024 * 1024;
 const MAX_SHAPE = 20 * 1024 * 1024;
 
@@ -88,7 +89,8 @@ function savePlugin() {
           if (!SHAPE_NAME_RE.test(name)) return reply(res, 400, { error: `שם קובץ לא תקין: ${name}` });
           const body = await readBody(req, MAX_SHAPE);
           if (body.length === 0) return reply(res, 400, { error: 'קובץ ריק' });
-          const p = safePath(root, 'shapes', name);
+          const isLocal = name.startsWith('local/');
+          const p = safePath(root, isLocal ? 'shapes/local' : 'shapes', isLocal ? name.slice(6) : name);
           if (!p) return reply(res, 400, { error: 'נתיב לא תקין' });
           await mkdir(p.dir, { recursive: true });
           await writeFile(p.full, body);
@@ -105,4 +107,5 @@ function savePlugin() {
 export default defineConfig({
   base: './',
   plugins: [savePlugin()],
+  worker: { format: 'es' },
 });

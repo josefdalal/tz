@@ -7,18 +7,45 @@ export const guiEnabled = import.meta.env.DEV || new URLSearchParams(location.se
 
 const MAX_STOPS = 6;
 
+// סימון קבוצות: ירוק חי (בלי חישוב), כתום דגימה (מחשב ב worker), אפור נעול (אפוי)
+// lil-gui מזריק את ה CSS שלו אחרי שלנו, ולכן הסלקטורים כאן ספציפיים יותר
+const CSS = `
+.lil-gui.lil-root .lil-gui.tz-live > .lil-title { box-shadow: inset 4px 0 0 #3ecf8e; }
+.lil-gui.lil-root .lil-gui.tz-geo > .lil-title { box-shadow: inset 4px 0 0 #f5a623; }
+.lil-gui.lil-root .lil-gui.tz-geo.tz-locked > .lil-title { box-shadow: inset 4px 0 0 #666; opacity: 0.7; }
+.lil-gui .tz-tag { font-size: 0.85em; opacity: 0.8; padding-left: 0.5em; }
+.lil-gui .tz-live .tz-tag { color: #3ecf8e; }
+.lil-gui .tz-geo .tz-tag { color: #f5a623; }
+.lil-gui .tz-geo.tz-locked .tz-tag { color: #999; }
+.lil-gui .tz-legend { padding: 4px var(--padding); font-size: 0.9em; line-height: 1.6; color: var(--text-color); }
+.lil-gui .tz-legend i { display: inline-block; width: 10px; height: 10px; margin-inline-end: 4px; vertical-align: -1px; }
+`;
+
+function tagFolder(folder, kind) {
+  folder.domElement.classList.add(kind === 'live' ? 'tz-live' : 'tz-geo');
+  const tag = document.createElement('span');
+  tag.className = 'tz-tag';
+  tag.textContent = kind === 'live' ? '· חי' : '· דגימה';
+  folder.$title.appendChild(tag);
+  return folder;
+}
+
 /**
  * פאנל שליטה. מופיע רק במצב פיתוח או עם ?debug.
- * hooks.onResample: שינוי שמחייב דגימה מחדש. hooks.onPalette: צבעים בלבד.
- * hooks.onImageMix: מחוון צבע התמונה, בלי דגימה.
- * hooks.presets: save(kind, name), load(kind, name), names(kind), onChange(fn),
- *                exportJSON(), importJSON(), reset()
- * hooks.shapeFiles: names(), onChange(fn), upload()
+ * hooks.onGeometry:  פרמטר גיאומטריה השתנה (דגימה ב worker, עם debounce)
+ * hooks.onTransform: מיקום, סיבוב, קנה מידה, היפוך (חי)
+ * hooks.onColors:    mapBy, צבע מהתמונה (חי)
+ * hooks.onPalette, hooks.onBackground (חי)
+ * hooks.presets, hooks.shapeFiles { names, onChange, upload(local) }, hooks.bake { bake, unbake }
  * מחזיר { refresh, status } או null כשהפאנל כבוי.
  */
 export function createGui(scene, stats, hooks) {
   if (!guiEnabled) return null;
-  const { onResample, onPalette, onBackground, onImageMix, presets, shapeFiles } = hooks;
+  const { onGeometry, onTransform, onColors, onPalette, onBackground, presets, shapeFiles, bake } = hooks;
+
+  const style = document.createElement('style');
+  style.textContent = CSS;
+  document.head.appendChild(style);
 
   const shapeUiValue = () =>
     scene.shape.type === 'image'
@@ -29,16 +56,21 @@ export function createGui(scene, stats, hooks) {
   gui.domElement.setAttribute('dir', 'ltr'); // ה CSS של lil-gui מניח LTR; הדף עצמו RTL
   const ui = { shape: shapeUiValue(), name: scene.id ?? '', status: '' };
 
+  const legend = document.createElement('div');
+  legend.className = 'tz-legend';
+  legend.innerHTML =
+    '<i style="background:#3ecf8e"></i>חי: מתעדכן מיד, בלי חישוב<br>' +
+    '<i style="background:#f5a623"></i>דגימה: מחשב מחדש ברקע<br>' +
+    '<i style="background:#666"></i>נעול: הגיאומטריה אפויה';
+  gui.$children.prepend(legend);
+
   const info = gui.addFolder('מידע');
   info.add(stats, 'count').name('עיגולים').listen().disable();
   info.add(stats, 'pool').name('מאגר').listen().disable();
+  info.add(stats, 'sampling').name('דגימה').listen().disable();
   info.add(stats, 'sampleMs').name('דגימה ms').listen().disable();
   info.add(stats, 'fps').name('fps').listen().disable();
 
-  // פריסטים
-  const fPresets = gui.addFolder('פריסטים');
-  fPresets.add(ui, 'status').name('מצב').listen().disable();
-  const nameCtrl = fPresets.add(ui, 'name').name('שם');
   const run = async (fn) => {
     try {
       ui.status = (await fn()) ?? '';
@@ -47,6 +79,11 @@ export function createGui(scene, stats, hooks) {
       console.error(e);
     }
   };
+
+  // פריסטים
+  const fPresets = gui.addFolder('פריסטים');
+  fPresets.add(ui, 'status').name('מצב').listen().disable();
+  const nameCtrl = fPresets.add(ui, 'name').name('שם');
   for (const kind of Object.keys(KINDS)) {
     fPresets.add({ go: () => run(() => presets.save(kind, ui.name)) }, 'go').name(`שמור ${KINDS[kind].label}`);
   }
@@ -74,14 +111,22 @@ export function createGui(scene, stats, hooks) {
   fPresets.add({ go: () => run(presets.importJSON) }, 'go').name('ייבוא JSON');
   fPresets.add({ go: () => run(presets.reset) }, 'go').name('איפוס לברירת מחדל');
 
+  // אפייה
+  const bakeUi = { state: '' };
+  const fBake = gui.addFolder('אפייה');
+  fBake.add(bakeUi, 'state').name('גיאומטריה').listen().disable();
+  const bakeBtn = fBake.add({ go: () => run(async () => { const m = await bake.bake(); syncLock(); return m; }) }, 'go').name('אפייה');
+  const unbakeBtn = fBake.add({ go: () => run(async () => { const m = await bake.unbake(); syncLock(); return m; }) }, 'go').name('ביטול אפייה');
+
+  // מקור (דגימה)
   const sh = scene.shape;
-  const fShape = gui.addFolder('צורה');
+  const fSource = tagFolder(gui.addFolder('מקור'), 'geo');
   // ערכי הרשימה: שם צורה מהספרייה, או file:<שם קובץ> מהתיקייה shapes
   const shapeOptions = () => ({
     ...Object.fromEntries(Object.keys(shapes).map((k) => [k, k])),
     ...Object.fromEntries(shapeFiles.names().map((n) => [n, `file:${n}`])),
   });
-  const shapeCtrl = fShape.add(ui, 'shape', shapeOptions()).name('צורה').onChange((v) => {
+  const shapeCtrl = fSource.add(ui, 'shape', shapeOptions()).name('צורה').onChange((v) => {
     if (!v) return;
     if (v.startsWith('file:')) {
       sh.type = 'image';
@@ -91,61 +136,51 @@ export function createGui(scene, stats, hooks) {
       sh.d = shapes[v];
     }
     syncImageFolder();
-    onResample();
+    onGeometry();
   });
   shapeFiles.onChange(() => shapeCtrl.options(shapeOptions()));
-  fShape.add({ go: () => run(async () => {
-    const msg = await shapeFiles.upload();
-    if (msg) { ui.shape = shapeUiValue(); shapeCtrl.updateDisplay(); syncImageFolder(); refreshAll(); }
+  const upload = (local) => run(async () => {
+    const msg = await shapeFiles.upload(local);
+    if (msg) refresh();
     return msg;
-  }) }, 'go').name('העלאת קובץ צורה');
-  fShape.add(sh, 'x', 0, 1, 0.001).name('מיקום x').onChange(onResample);
-  fShape.add(sh, 'y', 0, 1, 0.001).name('מיקום y').onChange(onResample);
-  fShape.add(sh, 'rotation', -180, 180, 0.5).name('סיבוב').onChange(onResample);
-  fShape.add(sh, 'scale', 0.05, 2, 0.01).name('קנה מידה').onChange(onResample);
-  fShape.add(sh, 'flipX').name('היפוך אופקי').onChange(onResample);
-  fShape.add(sh, 'flipY').name('היפוך אנכי').onChange(onResample);
-  fShape.add(scene, 'seed', 0, 9999, 1).name('seed').listen().onChange(onResample);
-  fShape.add({ reseed: () => { scene.seed = Math.floor(Math.random() * 10000); onResample(); } }, 'reseed').name('seed חדש');
-  fShape.add(scene, 'maxCount', 100, MAX_POOL, 100).name('מקסימום עיגולים').onChange(onResample);
+  });
+  fSource.add({ go: () => upload(false) }, 'go').name('העלאה ל shapes');
+  fSource.add({ go: () => upload(true) }, 'go').name('העלאה ל shapes/local (ניסיון)');
+  fSource.add(scene, 'seed', 0, 9999, 1).name('seed').onChange(onGeometry);
+  fSource.add({ go: () => { scene.seed = Math.floor(Math.random() * 10000); refreshAll(); onGeometry(); } }, 'go').name('seed חדש');
+  fSource.add(scene, 'maxCount', 100, MAX_POOL, 100).name('מקסימום עיגולים').onChange(onGeometry);
 
   const im = sh.image;
-  const fImage = fShape.addFolder('תמונה');
-  fImage.add(im, 'maskBy', maskByModes).name('מסכה לפי').onChange(onResample);
-  fImage.add(im, 'threshold', 0, 1, 0.01).name('סף').onChange(onResample);
-  fImage.add(im, 'invert').name('היפוך מסכה').onChange(onResample);
-  fImage.add(im, 'sizeAmount', 0, 1, 0.01).name('בהירות קובעת רדיוס').onChange(onResample);
-  fImage.add(im, 'sizeInvert').name('היפוך: בהיר גדול').onChange(onResample);
-  fImage.add(im, 'colorMix', 0, 1, 0.01).name('צבע מהתמונה').onChange(onImageMix);
-  function syncImageFolder() {
-    fImage.show(sh.type === 'image');
-  }
-  syncImageFolder();
+  const fImage = fSource.addFolder('תמונה');
+  fImage.add(im, 'maskBy', maskByModes).name('מסכה לפי').onChange(onGeometry);
+  fImage.add(im, 'threshold', 0, 1, 0.01).name('סף').onChange(onGeometry);
+  fImage.add(im, 'invert').name('היפוך מסכה').onChange(onGeometry);
+  fImage.add(im, 'sizeAmount', 0, 1, 0.01).name('בהירות קובעת רדיוס').onChange(onGeometry);
+  fImage.add(im, 'sizeInvert').name('היפוך: בהיר גדול').onChange(onGeometry);
 
-  const fRadius = gui.addFolder('רדיוס');
+  // רדיוס (דגימה)
+  const fRadius = tagFolder(gui.addFolder('רדיוס'), 'geo');
   const cMin = fRadius.add(scene.radius, 'min', 0.5, 30, 0.1).name('מינימום');
   const cMax = fRadius.add(scene.radius, 'max', 0.5, 60, 0.1).name('מקסימום');
-  cMin.onChange((v) => { if (v > scene.radius.max) { scene.radius.max = v; cMax.updateDisplay(); } onResample(); });
-  cMax.onChange((v) => { if (v < scene.radius.min) { scene.radius.min = v; cMin.updateDisplay(); } onResample(); });
-  fRadius.add(scene.radius, 'sizeMode', sizeModes).name('מצב גודל').onChange(onResample);
-  fRadius.add(scene.radius, 'gap', 0, 6, 0.1).name('מרווח').onChange(onResample);
-  fRadius.add(scene.radius, 'noiseScale', 0.001, 0.03, 0.0005).name('סקאלת noise').onChange(onResample);
+  cMin.onChange((v) => { if (v > scene.radius.max) { scene.radius.max = v; cMax.updateDisplay(); } onGeometry(); });
+  cMax.onChange((v) => { if (v < scene.radius.min) { scene.radius.min = v; cMin.updateDisplay(); } onGeometry(); });
+  fRadius.add(scene.radius, 'sizeMode', sizeModes).name('מצב גודל').onChange(onGeometry);
+  fRadius.add(scene.radius, 'gap', 0, 6, 0.1).name('מרווח').onChange(onGeometry);
+  fRadius.add(scene.radius, 'noiseScale', 0.001, 0.03, 0.0005).name('סקאלת noise').onChange(onGeometry);
 
-  const m = scene.motion;
-  const fMotion = gui.addFolder('תנועה');
-  fMotion.add(m, 'speed', 0, 4, 0.01).name('מהירות כללית');
-  const fPulse = fMotion.addFolder('פעימה');
-  fPulse.add(m.pulse, 'amount', 0, 50, 0.5).name('עוצמה %');
-  fPulse.add(m.pulse, 'speed', 0, 4, 0.01).name('מהירות');
-  const fWander = fMotion.addFolder('נדידה');
-  fWander.add(m.wander, 'range', 0, 40, 0.1).name('טווח px');
-  fWander.add(m.wander, 'speed', 0, 3, 0.01).name('מהירות');
-  const fCoh = fMotion.addFolder('קוהרנטיות');
-  fCoh.add(m, 'coherence', 0, 1, 0.01).name('קוהרנטיות');
-  fCoh.add(m, 'fieldScale', 0.0005, 0.03, 0.0005).name('סקאלת שדה');
+  // טרנספורמציה (חי)
+  const fTransform = tagFolder(gui.addFolder('טרנספורמציה'), 'live');
+  fTransform.add(sh, 'x', 0, 1, 0.001).name('מיקום x').onChange(onTransform);
+  fTransform.add(sh, 'y', 0, 1, 0.001).name('מיקום y').onChange(onTransform);
+  fTransform.add(sh, 'rotation', -180, 180, 0.5).name('סיבוב').onChange(onTransform);
+  fTransform.add(sh, 'scale', 0.05, 2, 0.01).name('קנה מידה').onChange(onTransform);
+  fTransform.add(sh, 'flipX').name('היפוך אופקי').onChange(onTransform);
+  fTransform.add(sh, 'flipY').name('היפוך אנכי').onChange(onTransform);
 
-  const fPalette = gui.addFolder('ספקטרום');
-  fPalette.add(scene.palette, 'mapBy', mapByModes).name('מיפוי לפי').onChange(onResample);
+  // ספקטרום (חי)
+  const fPalette = tagFolder(gui.addFolder('ספקטרום'), 'live');
+  fPalette.add(scene.palette, 'mapBy', mapByModes).name('מיפוי לפי').onChange(onColors);
+  fPalette.add(im, 'colorMix', 0, 1, 0.01).name('צבע מהתמונה').onChange(onColors);
   fPalette.addColor(scene.palette, 'background').name('רקע').onChange(onBackground);
   const fStops = fPalette.addFolder('עצירות');
   const stopActions = {
@@ -174,6 +209,38 @@ export function createGui(scene, stats, hooks) {
   }
   buildStops();
 
+  // תנועה (חי)
+  const m = scene.motion;
+  const fMotion = tagFolder(gui.addFolder('תנועה'), 'live');
+  fMotion.add(m, 'speed', 0, 4, 0.01).name('מהירות כללית');
+  const fPulse = fMotion.addFolder('פעימה');
+  fPulse.add(m.pulse, 'amount', 0, 50, 0.5).name('עוצמה %');
+  fPulse.add(m.pulse, 'speed', 0, 4, 0.01).name('מהירות');
+  const fWander = fMotion.addFolder('נדידה');
+  fWander.add(m.wander, 'range', 0, 40, 0.1).name('טווח px');
+  fWander.add(m.wander, 'speed', 0, 3, 0.01).name('מהירות');
+  const fCoh = fMotion.addFolder('קוהרנטיות');
+  fCoh.add(m, 'coherence', 0, 1, 0.01).name('קוהרנטיות');
+  fCoh.add(m, 'fieldScale', 0.0005, 0.03, 0.0005).name('סקאלת שדה');
+
+  const geoFolders = [fSource, fRadius];
+
+  function syncImageFolder() {
+    fImage.show(sh.type === 'image');
+  }
+
+  /** אפייה נועלת את כל פרמטרי הגיאומטריה בפאנל */
+  function syncLock() {
+    const locked = !!scene.baked;
+    for (const f of geoFolders) {
+      f.domElement.classList.toggle('tz-locked', locked);
+      for (const c of f.controllersRecursive()) c.enable(!locked);
+    }
+    bakeUi.state = locked ? `אפויה (${scene.baked.circles.length} עיגולים)` : 'חיה מהמקור';
+    bakeBtn.enable(!locked);
+    unbakeBtn.enable(locked);
+  }
+
   function refreshAll() {
     for (const c of gui.controllersRecursive()) c.updateDisplay();
   }
@@ -183,8 +250,11 @@ export function createGui(scene, stats, hooks) {
     ui.shape = shapeUiValue();
     syncImageFolder();
     buildStops();
+    syncLock();
     refreshAll();
   }
+  syncImageFolder();
+  syncLock();
 
   return {
     refresh,
