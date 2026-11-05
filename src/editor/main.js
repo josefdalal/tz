@@ -11,7 +11,7 @@ import { createStage } from '../engine/stage.js';
 import { framePNG, frameSVG } from '../render/export.js';
 import { createSampler } from '../shapes/sampling.js';
 import { shapeFiles, shapeFileNames, onShapeFilesChange, uploadShapeFile, normalizeFileName } from '../shapes/files.js';
-import { defaultScene, KINDS, toFile, fromFile, geometryKey } from '../scenes/schema.js';
+import { defaultScene, KINDS, PANEL_KINDS, toFile, fromFile, geometryKey } from '../scenes/schema.js';
 import { previewOptions, LAYOUT_KEYS } from '../scenes/frame.js';
 import { createFrameOverlay } from '../ui/frameOverlay.js';
 import { createTransitionMode } from '../transitions/mode.js';
@@ -211,6 +211,7 @@ const presets = {
     const file = await pickJSONFile();
     if (!file) return '';
     const { kind, data } = fromFile(file, file.type ? undefined : 'scene');
+    if (!PANEL_KINDS.includes(kind)) throw new Error(`קובץ ${KINDS[kind].label} נטען מהתיקייה שלו, לא כאן`);
     applyLoaded(kind, data);
     return `יובא קובץ ${KINDS[kind].label}`;
   },

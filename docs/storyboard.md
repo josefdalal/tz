@@ -64,11 +64,13 @@
 
 ## ג. storyboard.json
 
-נשמר ב `storyboard/storyboard.json`, באותה תיקייה שבה ייכנס בהמשך `storyboard/text-style.json`. אותו מנגנון version ומיזוג כמו שאר הפריסטים.
+נשמר ב `storyboard/storyboard.json`, באותה תיקייה שבה ייכנס בהמשך `storyboard/text-style.json`. אותו מנגנון version ומיזוג כמו שאר הפריסטים (סוג `storyboard` ב schema.js, ו version הוא `SCHEMA_VERSION` המשותף). המאגר קורא רק את storyboard.json מהתיקייה, כדי ש text-style.json יהיה סוג נפרד.
+
+**השלמה:** מערכים לא ממוזגים עם ברירות מחדל, ולכן `normalize` של הסוג משלים כל צעד מול `defaultStep`, ואת `text` מול `defaultStepText`. hold שלילי או לא מספר חוזר ל 800, מחרוזת ריקה ב transition הופכת ל null, צעד בלי id מקבל `s<מספר>`, ו id כפול מקבל סיומת.
 
 ```json
 {
-  "version": 1,
+  "version": 3,
   "type": "storyboard",
   "playback": "scrub",
   "steps": [
@@ -108,6 +110,15 @@
 - במעבר, `local` הוא ה t של evaluateAt.
 
 הפונקציה הזו טהורה, באותו עיקרון של המעבר: אותה גלילה נותנת תמיד אותו מצב.
+
+**הקוד:** `src/storyboard/timeline.js`, בלי DOM ובלי מאגר, כך שהנגן, העורך ו Node משתמשים בו:
+- `buildTimeline(storyboard, getTransition)`: מיקום כל עצירה וכל מעבר בפיקסלי גלילה, `total`, ואזהרות (מעבר שלא נמצא, from ו to שלא תואמים לצעדים, מעבר בצעד האחרון). מעבר חסר או null מקבל את `defaultTransition` עם הסצנות של הצעדים.
+- `locate(tl, y, out)`: המצב, כתוב לתוך out בלי הקצאה, כדי שאפשר לקרוא לה בכל פריים. נקודת הקצה בין עצירה למעבר שייכת לעצירה.
+- `activeStep(loc)`: הצעד הפעיל למחוון ולטקסט הזמני. במעבר הוא מתחלף ב local של 0.5.
+- `snapTarget(tl, y, direction)`: בעצירה המיקום עצמו, ובמעבר הקצה הקרוב, או לפי כיוון.
+- `stepPosition(tl, i, where)`: המיקום של צעד לניווט.
+
+`src/storyboard/storyboard.js` מחבר את זה למאגר: `loadStoryboard()`, `getTransition(name)` ו `timelineFor(storyboard)`, שמוסיף אזהרה על סצנה חסרה.
 
 **snap** הוא לנקודות העצירה. ב scrub, כל אזור עצירה הוא נקודת snap. ב step, מחווה אחת עוברת לצעד הבא.
 

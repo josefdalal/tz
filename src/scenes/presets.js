@@ -1,4 +1,5 @@
-// מאגר הפריסטים מהתיקיות scenes, palettes, motions בשורש הריפו.
+// מאגר הפריסטים מהתיקיות בשורש הריפו (scenes, palettes, motions, transitions,
+// transition-styles, storyboard).
 //
 // הקבצים נטענים דרך import.meta.glob, כך שהם נכנסים גם לבנייה של GitHub Pages.
 // בזמן פיתוח, קובץ חדש שנשמר לתיקייה גורם ל Vite להריץ מחדש את המודול הזה (HMR).
@@ -14,6 +15,8 @@ const files = {
   motion: import.meta.glob('/motions/*.json', { eager: true, import: 'default' }),
   transition: import.meta.glob('/transitions/*.json', { eager: true, import: 'default' }),
   transitionStyle: import.meta.glob('/transition-styles/*.json', { eager: true, import: 'default' }),
+  // רק storyboard.json: בהמשך ייכנס לאותה תיקייה text-style.json, שהוא סוג אחר
+  storyboard: import.meta.glob('/storyboard/storyboard.json', { eager: true, import: 'default' }),
 };
 
 /** @type {Record<string, Record<string, object>>} סוג אל (שם אל קובץ) */
@@ -52,7 +55,7 @@ export function normalizeName(name) {
 
 /**
  * שמירת פריסט. בזמן פיתוח: POST ל plugin ב vite.config.js, שכותב לתיקייה בריפו.
- * בבנייה (למשל עם ?debug באתר): הורדה של הקובץ, כי אין לאן לכתוב.
+ * בעורך שבנוי, בלי שרת פיתוח: הורדה של הקובץ, כי אין לאן לכתוב.
  * @returns {Promise<string>} תיאור קצר של מה שקרה
  */
 export async function savePreset(kind, name, data) {

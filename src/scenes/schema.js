@@ -131,14 +131,51 @@ export const defaultScroll = {
 // מעבר שמור: זוג סצנות, סגנון וגלילה. נשמר כ transitions/<from>__<to>.json
 export const defaultTransition = { from: '', to: '', scroll: defaultScroll, ...defaultTransitionStyle };
 
+// סטוריבורד (docs/storyboard.md, סעיף ג): רשימת צעדים. נשמר כ storyboard/storyboard.json.
+// בלוק הטקסט של צעד, במבנה הסופי של docs/text-layer.md. כל שדה אופציונלי.
+// בשלב 6 יתווספו לאותו אובייקט שדות מיקום ונקודות כניסה ויציאה.
+export const defaultStepText = { title: '', body: '', link: { text: '', href: '' } };
+
+export const defaultStep = {
+  id: '', // מזהה יציב לצעד, לא תלוי במיקום ברשימה
+  scene: '', // שם סצנה ב scenes/
+  hold: 800, // אורך אזור העצירה, בפיקסלי גלילה
+  transition: null, // שם קובץ ב transitions/ למעבר לצעד הבא, או null (סגנון וגלילה ברירת מחדל)
+  text: null, // defaultStepText או null
+};
+
+export const playbackModes = ['scrub', 'step'];
+export const defaultStoryboard = { playback: 'scrub', steps: [] };
+
+/** השלמת כל צעד מול ברירות המחדל. deepMerge מחליף מערכים בשלמותם, ולכן הצעדים מושלמים כאן. */
+function normalizeStoryboard(data) {
+  if (!playbackModes.includes(data.playback)) data.playback = defaultStoryboard.playback;
+  const used = new Set();
+  data.steps = data.steps
+    .filter((s) => s !== null && typeof s === 'object' && !Array.isArray(s))
+    .map((raw, i) => {
+      const step = deepMerge(defaultStep, raw);
+      if (!Number.isFinite(step.hold) || step.hold < 0) step.hold = defaultStep.hold;
+      if (typeof step.transition !== 'string' || step.transition === '') step.transition = null;
+      step.text = step.text !== null && typeof step.text === 'object' ? deepMerge(defaultStepText, step.text) : null;
+      let id = typeof step.id === 'string' && step.id ? step.id : `s${i + 1}`;
+      while (used.has(id)) id = `${id}_`;
+      used.add(id);
+      step.id = id;
+      return step;
+    });
+  return data;
+}
+
 // סוגי פריסטים. scene מכיל גם palette ו motion. panel: false = לא בתיקיית "פריסטים" אלא
-// בתיקיית "מעבר" של העורך.
+// בתיקיית "מעבר" או "סטוריבורד" של העורך. normalize רץ אחרי המיזוג.
 export const KINDS = {
   scene: { folder: 'scenes', label: 'סצנה', defaults: () => defaultScene },
   palette: { folder: 'palettes', label: 'פלטה', defaults: () => defaultScene.palette },
   motion: { folder: 'motions', label: 'תנועה', defaults: () => defaultScene.motion },
   transition: { folder: 'transitions', label: 'מעבר', defaults: () => defaultTransition, panel: false },
   transitionStyle: { folder: 'transition-styles', label: 'סגנון מעבר', defaults: () => defaultTransitionStyle, panel: false },
+  storyboard: { folder: 'storyboard', label: 'סטוריבורד', defaults: () => defaultStoryboard, panel: false, normalize: normalizeStoryboard },
 };
 export const PANEL_KINDS = Object.keys(KINDS).filter((k) => KINDS[k].panel !== false);
 
@@ -146,6 +183,7 @@ export const PANEL_KINDS = Object.keys(KINDS).filter((k) => KINDS[k].panel !== f
 const migrations = {
   transition: {},
   transitionStyle: {},
+  storyboard: {},
   scene: {
     // 1 אל 2: הטרנספורמציה עברה מ shape אל layouts.landscape. אפייה ישנה נשמרת כמו שהיא
     // (s0 שלה היה בפיקסלי מסך, ולכן הגודל שלה עשוי לזוז מעט).
@@ -199,5 +237,6 @@ export function fromFile(file, expectedKind) {
     const step = migrations[kind][version];
     if (step) data = step(data);
   }
-  return { kind, data: deepMerge(KINDS[kind].defaults(), data) };
+  const merged = deepMerge(KINDS[kind].defaults(), data);
+  return { kind, data: KINDS[kind].normalize ? KINDS[kind].normalize(merged) : merged };
 }

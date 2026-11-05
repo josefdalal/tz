@@ -1,0 +1,36 @@
+{
+  "version": 3,
+  "type": "storyboard",
+  "playback": "scrub",
+  "steps": [
+    {
+      "id": "s1",
+      "scene": "intro",
+      "hold": 800,
+      "transition": "intro__triangle-ember",
+      "text": {
+        "title": "פתיחה",
+        "body": "ריבוע של עיגולים.",
+        "link": { "text": "", "href": "" }
+      }
+    },
+    {
+      "id": "s2",
+      "scene": "triangle-ember",
+      "hold": 800,
+      "transition": null,
+      "text": null
+    },
+    {
+      "id": "s3",
+      "scene": "S_002",
+      "hold": 800,
+      "transition": null,
+      "text": {
+        "title": "סצנה אפויה",
+        "body": "",
+        "link": { "text": "המאגר", "href": "https://github.com/" }
+      }
+    }
+  ]
+}

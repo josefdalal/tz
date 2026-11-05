@@ -2,7 +2,7 @@ import { defineConfig, normalizePath } from 'vite';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const PRESET_FOLDERS = ['scenes', 'palettes', 'motions', 'transitions', 'transition-styles'];
+const PRESET_FOLDERS = ['scenes', 'palettes', 'motions', 'transitions', 'transition-styles', 'storyboard'];
 const PRESET_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}$/u;
 // local/ אופציונלי: shapes/local לתמונות ניסיון, ב .gitignore
 const SHAPE_NAME_RE = /^(local\/)?[\p{L}\p{N}][\p{L}\p{N}_-]{0,63}\.(svg|png|jpg|jpeg|webp)$/u;
@@ -40,7 +40,7 @@ function safePath(root, folder, file) {
 }
 
 // בזמן פיתוח בלבד: שמירה ישירה לריפו מהפאנל.
-//   POST /__presets  JSON {folder, name, data}  אל scenes/ palettes/ motions/
+//   POST /__presets  JSON {folder, name, data}  אל תיקיות הפריסטים (PRESET_FOLDERS)
 //   POST /__shapes   גוף בינארי, שם בכותרת X-Tz-Name  אל shapes/
 //   POST /__baked    גוף בינארי (.tzb), שם בכותרת X-Tz-Name  אל baked/
 // הכתיבה מוגבלת לתיקיות האלה ולשמות קבצים פשוטים. הכותרת X-Tz-Save מחייבת preflight,
