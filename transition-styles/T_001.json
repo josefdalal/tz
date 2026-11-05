@@ -1,0 +1,40 @@
+{
+  "version": 3,
+  "type": "transitionStyle",
+  "matching": {
+    "mode": "brightness",
+    "seed": 1718
+  },
+  "path": {
+    "mode": "straight",
+    "curvature": 0.35,
+    "direction": "cw",
+    "noiseAmount": 136,
+    "noiseScale": 0.01,
+    "spread": 776,
+    "gatherShrink": 0.4
+  },
+  "order": {
+    "mode": "radius",
+    "stagger": 0.4,
+    "reverse": false,
+    "seed": 1
+  },
+  "focus": [
+    0.41779661016949154,
+    0.9836065573770492
+  ],
+  "leftovers": {
+    "mode": "shrink",
+    "angle": -90
+  },
+  "spawns": {
+    "mode": "grow"
+  },
+  "ease": "circ.inOut",
+  "overlay": {
+    "dip": 1,
+    "sharpness": 1
+  },
+  "duration": 4.1
+}
