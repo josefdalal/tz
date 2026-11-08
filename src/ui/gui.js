@@ -426,6 +426,7 @@ export function createGui(scene, stats, hooks) {
   for (const f of gui.foldersRecursive()) f.close();
 
   return {
+    root: gui,
     refresh,
     syncLayout,
     setTransitionMode,

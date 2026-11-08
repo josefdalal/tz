@@ -150,9 +150,51 @@ export function createTransitionMode(deps) {
     ui.reversible = '';
   }
 
+  // מטמון לתצוגה המקדימה של הסטוריבורד: סצנה נטענת או נדגמת פעם אחת, כל עוד הקובץ לא השתנה
+  const sideCache = new Map(); // שם אל { file, scene, geom }
+  async function loadCached(name) {
+    const file = registry.scene?.[name];
+    const hit = sideCache.get(name);
+    if (hit && hit.file === file) return { scene: hit.scene, geom: hit.geom };
+    const side = await loadSide(name);
+    sideCache.set(name, { file, ...side });
+    return { scene: side.scene, geom: side.geom };
+  }
+  let shownKey = null; // הזוג והנתונים ש show() התקין, כדי לא להתקין שוב על כל תזוזה של הסרגל
+
   async function enter() {
     ui.status = 'טוען ודוגם...';
+    shownKey = null;
     const [A, B] = await Promise.all([loadSide(ui.a), loadSide(ui.b)]);
+    return enterSides(A, B);
+  }
+
+  /**
+   * תצוגה של זוג סצנות עם נתוני מעבר מלאים (סגנון וגלילה), ב t נתון. משמש את התצוגה
+   * המקדימה של הסטוריבורד. אותו זוג ואותם נתונים: רק t מתעדכן.
+   */
+  async function show(a, b, data, t) {
+    ui.playing = false;
+    ui.scrollOn = false;
+    const key = JSON.stringify([a, b, data]);
+    if (active && key === shownKey) {
+      ui.t = t;
+      return ui.status;
+    }
+    const { from, to, scroll: sc, ...rest } = data; // from ו to: הצעדים קובעים את הזוג
+    assignInPlace(style, rest);
+    assignInPlace(scroll, sc);
+    ui.a = a;
+    ui.b = b;
+    ui.t = t;
+    ui.status = 'טוען ודוגם...';
+    const [A, B] = await Promise.all([loadCached(a), loadCached(b)]);
+    const msg = await enterSides(A, B);
+    shownKey = key;
+    return msg;
+  }
+
+  async function enterSides(A, B) {
     sides = { A, B };
     buildPaletteLUT(A.scene.palette.stops, lutA, 256, A.scene.palette.space);
     buildPaletteLUT(B.scene.palette.stops, lutB, 256, B.scene.palette.space);
@@ -179,6 +221,7 @@ export function createTransitionMode(deps) {
   function exit() {
     if (!active) return '';
     active = false;
+    shownKey = null;
     ui.playing = false;
     for (let s = 0; s < p.capacity; s++) {
       p.colorU[s] = 0;
@@ -295,6 +338,7 @@ export function createTransitionMode(deps) {
   /** שינוי סגנון: הכנה מחדש. העיגולים לא קופצים, הם זורמים למצב החדש. */
   function onStyle() {
     if (!active) return;
+    shownKey = null;
     layoutSides();
     install();
     shiftNext = false;
@@ -362,6 +406,7 @@ export function createTransitionMode(deps) {
     onWheel,
     sceneNames,
     enter,
+    show,
     exit,
     frame,
     afterMotion,

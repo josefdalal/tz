@@ -19,6 +19,7 @@ import { bakedFiles, bakeToBytes, bytesToGeometry, loadBakedGeometry, saveBakedF
 import { registry, presetNames, onPresetsChange, savePreset, normalizeName } from '../scenes/presets.js';
 import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from '../scenes/persist.js';
 import { createGui } from '../ui/gui.js';
+import { createStoryboardPanel } from '../ui/storyboardPanel.js';
 import { assignInPlace, clone } from '../util/merge.js';
 
 // מצב התחלתי: המצב האחרון מ localStorage, אחרת ברירת המחדל
@@ -39,6 +40,7 @@ const scene = initialScene();
 const editor = { preview: 'חלון', showSafe: true };
 const overlay = createFrameOverlay();
 let transition = null;
+let storyboardPanel = null;
 
 const stage = createStage({
   canvas,
@@ -270,6 +272,7 @@ transition = createTransitionMode({
   },
   onExit: () => {
     gui?.setTransitionMode(false);
+    storyboardPanel?.onTransitionExit();
     overlay.setMarker(null);
     applyPalette();
     applyBackground();
@@ -354,6 +357,13 @@ const gui = createGui(scene, stats, {
   bake,
   exporter: exportHooks,
   transition,
+});
+
+// סטוריבורד: צעדים, טקסט, תצוגה מקדימה ושמירה ל storyboard/storyboard.json
+storyboardPanel = createStoryboardPanel(gui.root, {
+  transition,
+  refreshTransition: () => gui.refreshTransition(),
+  onPresetsChange,
 });
 
 // קובץ צורה שהשתנה בדיסק (HMR) צריך דגימה מחדש אם הוא הצורה הנוכחית
