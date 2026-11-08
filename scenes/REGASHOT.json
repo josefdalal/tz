@@ -1,0 +1,110 @@
+{
+  "version": 3,
+  "type": "scene",
+  "id": "REGASHOT",
+  "seed": 9999,
+  "maxCount": 20900,
+  "frame": {
+    "reference": "16:9"
+  },
+  "layouts": {
+    "landscape": {
+      "x": 0.5,
+      "y": 0.5,
+      "rotation": 0,
+      "scale": 0.85,
+      "flipX": false,
+      "flipY": false
+    },
+    "portrait": null
+  },
+  "shape": {
+    "type": "image",
+    "d": "M0 0 L400 0 L400 400 L0 400 Z",
+    "fillRule": "nonzero",
+    "src": "local/REGASHOT.png",
+    "image": {
+      "maskBy": "luminance",
+      "threshold": 0.21,
+      "invert": false,
+      "sizeAmount": 0.55,
+      "sizeInvert": false,
+      "colorMix": 0.72
+    },
+    "x": 0.5,
+    "y": 0.5,
+    "rotation": 0,
+    "scale": 0.6,
+    "flipX": false,
+    "flipY": false,
+    "fit": "center"
+  },
+  "radius": {
+    "min": 0.5,
+    "max": 2,
+    "sizeMode": "edgeDistance",
+    "gap": 0.4,
+    "noiseScale": 0.01
+  },
+  "palette": {
+    "space": "oklch",
+    "stops": [
+      "#6b6b6b",
+      "#000000",
+      "#d6d6d6"
+    ],
+    "mapBy": "radius",
+    "background": "#ffffff"
+  },
+  "motion": {
+    "speed": 0.61,
+    "pulse": {
+      "amount": 10.5,
+      "speed": 0.44
+    },
+    "wander": {
+      "range": 20.4,
+      "speed": 0.45
+    },
+    "coherence": 0.59,
+    "fieldScale": 0.0035,
+    "colorShift": 0.1
+  },
+  "physics": {
+    "spring": {
+      "frequency": 1.75,
+      "damping": 0.39
+    },
+    "substeps": 2,
+    "collisions": {
+      "enabled": false,
+      "strength": 1,
+      "iterations": 2,
+      "radius": "base"
+    },
+    "mouse": {
+      "enabled": true,
+      "radius": 145,
+      "strength": 0.12
+    }
+  },
+  "enter": {
+    "mode": "fromCenter"
+  },
+  "exit": {
+    "mode": "disperse",
+    "strength": 1
+  },
+  "render": {
+    "mode": "flat",
+    "lightDir": [
+      -0.4,
+      -0.6,
+      0.7
+    ]
+  },
+  "baked": {
+    "file": "REGASHOT.tzb",
+    "count": 20900
+  }
+}
