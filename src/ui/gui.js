@@ -118,7 +118,8 @@ export function createGui(scene, stats, hooks) {
   const bakeUi = { state: '' };
   const fBake = gui.addFolder('אפייה');
   fBake.add(bakeUi, 'state').name('גיאומטריה').listen().disable();
-  const bakeBtn = fBake.add({ go: () => run(async () => { const m = await bake.bake(); syncLock(); return m; }) }, 'go').name('אפייה');
+  fBake.add(ui, 'status').name('מצב').listen().disable();
+  const bakeBtn = fBake.add({ go: () => run(async () => { const m = await bake.bake(ui.name); syncLock(); return m; }) }, 'go').name('אפייה');
   const unbakeBtn = fBake.add({ go: () => run(async () => { const m = await bake.unbake(); syncLock(); return m; }) }, 'go').name('ביטול אפייה');
 
   // מקור (דגימה)

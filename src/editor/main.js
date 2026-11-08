@@ -199,7 +199,14 @@ const presets = {
     const name = normalizeName(rawName);
     if (!name) throw new Error('שם לא תקין: אותיות, ספרות, _ ו - בלבד');
     if (registry[kind][name] && !confirm(`${KINDS[kind].label} "${name}" כבר קיימת. לדרוס?`)) return 'בוטל';
-    if (kind === 'scene') scene.id = name;
+    if (kind === 'scene') {
+      scene.id = name;
+      // סצנה אפויה שנשמרת בשם אחר: גם האפייה נשמרת בשם החדש, כדי ששתי סצנות לא יפנו לאותו קובץ
+      if (scene.baked?.file && scene.baked.file !== `${name}.tzb` && stage.geom) {
+        const moved = await writeBake(name);
+        if (!moved) return 'בוטל';
+      }
+    }
     return savePreset(kind, name, sliceOf(kind));
   },
   load(kind, name) {
@@ -232,25 +239,41 @@ const presets = {
 const sourceAvailable = () =>
   scene.shape.type === 'image' ? !!shapeFiles[scene.shape.src] : !!scene.shape.d;
 
+/**
+ * כתיבת הגיאומטריה הנוכחית ל baked/<name>.tzb, והפניה של הסצנה אליו. לפני דריסה של קובץ קיים
+ * שואלים, ומציינים אילו סצנות שמורות מפנות אליו. מחזיר null אם בוטל.
+ */
+async function writeBake(name) {
+  const target = `${name}.tzb`;
+  if (bakedFiles[target]) {
+    const users = Object.keys(registry.scene).filter((n) => n !== name && registry.scene[n].baked?.file === target);
+    const note = users.length ? `\nהסצנות ${users.join(', ')} מפנות אליו, והן יציגו את הגיאומטריה החדשה.` : '';
+    if (!confirm(`baked/${target} כבר קיים. לדרוס?${note}`)) return null;
+  }
+  const bytes = await bakeToBytes(stage.geom);
+  const decoded = await bytesToGeometry(bytes);
+  const { file, persisted } = await saveBakedFile(name, bytes);
+  primeBaked(file, decoded);
+  scene.baked = { file, count: decoded.count };
+  stats.sampling = 'אפוי';
+  applyGeometry(decoded);
+  return { file, persisted, count: decoded.count, kb: (bytes.length / 1024).toFixed(1) };
+}
+
 const bake = {
-  // האפייה נשמרת כקובץ בינארי ב baked/<שם הסצנה>.tzb, והסצנה מפנה אליו.
+  // האפייה נשמרת כקובץ בינארי ב baked/<שם>.tzb, והסצנה מפנה אליו. השם הוא שם הסצנה שבשדה
+  // "שם" בפאנל (אחרת scene.id), כדי שאפייה של סצנה חדשה לא תדרוס את הקובץ של הסצנה שנטענה קודם.
   // הגיאומטריה מוחלפת בזו שפוענחה מהקובץ, כך שמה שרואים בעורך זהה בדיוק למה שהנגן יטען.
-  async bake() {
+  async bake(rawName) {
     if (scene.baked) return 'כבר אפוי';
     if (!stage.geom || sampler.isBusy()) throw new Error('הדגימה עדיין רצה, נסה שוב בעוד רגע');
-    const name = normalizeName(scene.id) ?? 'scene';
-    if (bakedFiles[`${name}.tzb`] && !confirm(`baked/${name}.tzb כבר קיים. לדרוס?`)) return 'בוטל';
-    const bytes = await bakeToBytes(stage.geom);
-    const decoded = await bytesToGeometry(bytes);
-    const { file, persisted } = await saveBakedFile(name, bytes);
-    primeBaked(file, decoded);
-    scene.baked = { file, count: decoded.count };
-    stats.sampling = 'אפוי';
-    applyGeometry(decoded);
-    const kb = (bytes.length / 1024).toFixed(1);
-    return persisted
-      ? `נאפו ${decoded.count} עיגולים אל baked/${file} (${kb}KB)`
-      : `נאפו ${decoded.count} עיגולים; הקובץ ${file} ירד (אין שרת פיתוח), יש לשים אותו ב baked/`;
+    const name = normalizeName(rawName) ?? normalizeName(scene.id) ?? 'scene';
+    const r = await writeBake(name);
+    if (!r) return 'בוטל';
+    // ההפניה לאפייה נכנסת לקובץ הסצנה רק בשמירה; בלי זה הנגן לא יראה את האפייה
+    return r.persisted
+      ? `נאפו ${r.count} עיגולים אל baked/${r.file} (${r.kb}KB). כדי שהעמוד הראשי יראה אותה: שמור סצנה בשם ${name}`
+      : `נאפו ${r.count} עיגולים; הקובץ ${r.file} ירד (אין שרת פיתוח), יש לשים אותו ב baked/`;
   },
   unbake() {
     if (!scene.baked) return 'לא אפוי';

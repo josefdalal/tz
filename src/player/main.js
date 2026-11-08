@@ -9,7 +9,7 @@ import Lenis from 'lenis';
 import { createStage } from '../engine/stage.js';
 import { fromFile, defaultScroll } from '../scenes/schema.js';
 import { registry, onPresetsChange } from '../scenes/presets.js';
-import { loadBakedGeometry } from '../scenes/bakedFiles.js';
+import { loadBakedGeometry, bakedFiles } from '../scenes/bakedFiles.js';
 import { loadStoryboard, timelineFor } from '../storyboard/storyboard.js';
 import { locate, activeStep, viewAt, textOpacity, snapTarget } from '../storyboard/timeline.js';
 import { createTransitionRunner } from '../transitions/runner.js';
@@ -38,7 +38,13 @@ async function main() {
   const scenes = Object.fromEntries(names.map((n) => [n, fromFile(registry.scene[n], 'scene').data]));
   const unbaked = names.filter((n) => !scenes[n].baked);
   if (unbaked.length) {
-    return say(`העמוד הראשי מציג רק סצנות אפויות. לא אפויות: ${unbaked.join(', ')}. אפשר לאפות אותן בעורך, בתיקייה "אפייה".`);
+    // קובץ אפייה בשם הסצנה בלי הפניה מהסצנה: אפו אותה ולא שמרו את הסצנה אחרי זה
+    const unsaved = unbaked.filter((n) => bakedFiles[`${n}.tzb`]);
+    const never = unbaked.filter((n) => !bakedFiles[`${n}.tzb`]);
+    const parts = ['העמוד הראשי מציג רק סצנות אפויות.'];
+    if (never.length) parts.push(`לא אפויות: ${never.join(', ')}. אפשר לאפות אותן בעורך, בתיקייה "אפייה", ואז לשמור סצנה.`);
+    if (unsaved.length) parts.push(`נאפו אבל הסצנה לא נשמרה אחרי האפייה: ${unsaved.join(', ')}. בעורך: לטעון, לאפות שוב ולשמור סצנה באותו שם.`);
+    return say(parts.join(' '));
   }
 
   say('טוען...');
