@@ -66,7 +66,7 @@
 
 נשמר ב `storyboard/storyboard.json`, באותה תיקייה שבה ייכנס בהמשך `storyboard/text-style.json`. אותו מנגנון version ומיזוג כמו שאר הפריסטים (סוג `storyboard` ב schema.js, ו version הוא `SCHEMA_VERSION` המשותף). המאגר קורא רק את storyboard.json מהתיקייה, כדי ש text-style.json יהיה סוג נפרד.
 
-**השלמה:** מערכים לא ממוזגים עם ברירות מחדל, ולכן `normalize` של הסוג משלים כל צעד מול `defaultStep`, ואת `text` מול `defaultStepText`. hold שלילי או לא מספר חוזר ל 100 (ברירת המחדל: שנץ גלגלת אחד, כדי שהמעבר יתחיל מיד), מחרוזת ריקה ב transition הופכת ל null, צעד בלי id מקבל `s<מספר>`, ו id כפול מקבל סיומת.
+**השלמה:** מערכים לא ממוזגים עם ברירות מחדל, ולכן `normalize` של הסוג משלים כל צעד מול `defaultStep`, ואת `text` מול `defaultStepText`. hold שלילי או לא מספר חוזר ל 400 (ברירת המחדל: כרבע ממעבר של 1200, כדי שהצורה תעמוד רגע לפני היציאה ואחרי הנחיתה), מחרוזת ריקה ב transition הופכת ל null, צעד בלי id מקבל `s<מספר>`, ו id כפול מקבל סיומת.
 
 ```json
 {
@@ -77,7 +77,7 @@
     {
       "id": "s1",
       "scene": "intro",
-      "hold": 100,
+      "hold": 400,
       "transition": "intro__triangle-ember",
       "text": null
     }
