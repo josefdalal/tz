@@ -4,32 +4,31 @@
   "playback": "scrub",
   "steps": [
     {
-      "id": "s1",
+      "id": "s2",
       "scene": "intro",
       "hold": 800,
-      "transition": "intro__triangle-ember",
+      "transition": null,
       "text": {
-        "title": "פתיחה",
-        "body": "ריבוע של עיגולים.",
-        "link": { "text": "", "href": "" }
+        "title": "יוסף דלאל",
+        "body": "רק לחלום ידעתי ",
+        "link": {
+          "text": "",
+          "href": ""
+        }
       }
     },
     {
-      "id": "s2",
-      "scene": "triangle-ember",
-      "hold": 800,
-      "transition": null,
-      "text": null
-    },
-    {
       "id": "s3",
-      "scene": "S_002",
+      "scene": "intro_B",
       "hold": 800,
       "transition": null,
       "text": {
-        "title": "סצנה אפויה",
-        "body": "",
-        "link": { "text": "המאגר", "href": "https://github.com/" }
+        "title": "ינשוף",
+        "body": "איפה יושב הטקסט",
+        "link": {
+          "text": "המאגר",
+          "href": "https://github.com/"
+        }
       }
     }
   ]

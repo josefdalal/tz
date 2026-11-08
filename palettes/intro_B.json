@@ -1,0 +1,12 @@
+{
+  "version": 3,
+  "type": "palette",
+  "space": "oklch",
+  "stops": [
+    "#6b6b6b",
+    "#000000",
+    "#d6d6d6"
+  ],
+  "mapBy": "radial",
+  "background": "#ffffff"
+}
