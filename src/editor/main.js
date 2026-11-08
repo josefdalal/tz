@@ -20,6 +20,7 @@ import { registry, presetNames, onPresetsChange, savePreset, normalizeName } fro
 import { loadLocal, saveLocal, clearLocal, downloadJSON, downloadBlob, pickJSONFile, pickFile } from '../scenes/persist.js';
 import { createGui } from '../ui/gui.js';
 import { createStoryboardPanel } from '../ui/storyboardPanel.js';
+import { createTextDisplay } from '../storyboard/textDisplay.js';
 import { assignInPlace, clone } from '../util/merge.js';
 
 // מצב התחלתי: המצב האחרון מ localStorage, אחרת ברירת המחדל
@@ -39,6 +40,7 @@ const canvas = document.getElementById('stage');
 const scene = initialScene();
 const editor = { preview: 'חלון', showSafe: true };
 const overlay = createFrameOverlay();
+const textDisplay = createTextDisplay(); // טקסט הצעד בתצוגה המקדימה של הסטוריבורד
 let transition = null;
 let storyboardPanel = null;
 
@@ -47,6 +49,7 @@ const stage = createStage({
   scene,
   previewAspect: () => previewOptions[editor.preview],
   onFrame: (s) => {
+    textDisplay.place(s.view);
     overlay.update(s.view, s.safe, {
       width: s.width,
       height: s.height,
@@ -364,6 +367,7 @@ storyboardPanel = createStoryboardPanel(gui.root, {
   transition,
   refreshTransition: () => gui.refreshTransition(),
   onPresetsChange,
+  text: textDisplay,
 });
 
 // קובץ צורה שהשתנה בדיסק (HMR) צריך דגימה מחדש אם הוא הצורה הנוכחית

@@ -198,6 +198,7 @@ src/
              frameOverlay.js  מסגרת מדומה ואזור בטוח מעל הקנבס (עורך בלבד)
   storyboard/ timeline.js  ציר הגלילה, טהור: buildTimeline, locate (גלילה אל צעד, שלב ו t מקומי), snapTarget
              storyboard.js  טעינת storyboard.json והמעברים מהמאגר
+             textDisplay.js  תצוגת טקסט זמנית בפינת המסגרת (תצוגה מקדימה בעורך, ובהמשך הנגן)
   util/      rng.js, merge.js (deepMerge, assignInPlace)
 scenes/      פריסטים של סצנה שלמה, קובץ JSON לכל אחד
 palettes/    פריסטים של פלטה (scene.palette)

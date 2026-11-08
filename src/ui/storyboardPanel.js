@@ -6,6 +6,7 @@
 //
 // תצוגה מקדימה: סרגל לאורך כל הסטוריבורד, דרך locate של הנגן. המצב מוצג במצב המעבר:
 // במעבר, הזוג של המעבר ב t המקומי. בעצירה, המעבר היוצא ב t של 0 (או הנכנס ב 1 בצעד האחרון).
+// הטקסט של הצעד הפעיל מוצג בתצוגה הזמנית (storyboard/textDisplay.js), ומתחלף באמצע המעבר.
 
 import { defaultStepText, defaultStoryboard, defaultTransition, playbackModes } from '../scenes/schema.js';
 import { registry, savePreset } from '../scenes/presets.js';
@@ -61,7 +62,7 @@ function serialize(sb) {
 
 /**
  * @param gui  שורש הפאנל (lil-gui)
- * @param hooks { transition, refreshTransition(), onPresetsChange(fn) }
+ * @param hooks { transition, refreshTransition(), onPresetsChange(fn), text: createTextDisplay() }
  * @returns {{ onTransitionExit(): void }}
  */
 export function createStoryboardPanel(gui, hooks) {
@@ -77,6 +78,12 @@ export function createStoryboardPanel(gui, hooks) {
 
   const ui = { status: '', state: '' };
   const pv = { on: false, y: 0, info: '' };
+  let shownStep = -1; // הצעד הפעיל בתצוגה המקדימה, לטקסט
+
+  /** הטקסט של הצעד הפעיל, רק כשהתצוגה המקדימה דלוקה. נקרא גם אחרי כל הקלדה. */
+  function showText() {
+    hooks.text.show(pv.on && shownStep >= 0 ? sb.steps[shownStep]?.text ?? null : null);
+  }
 
   const run = async (fn) => {
     try {
@@ -196,7 +203,10 @@ export function createStoryboardPanel(gui, hooks) {
   const fPreview = fSb.addFolder('תצוגה מקדימה');
   fPreview.add(pv, 'on').name('תצוגה מקדימה').onChange((on) => {
     if (on) updatePreview();
-    else if (tr.active) tr.exit();
+    else {
+      showText();
+      if (tr.active) tr.exit();
+    }
   });
   const yCtrl = fPreview.add(pv, 'y', 0, Math.max(1, tl.total), 1).name('מיקום px').onChange(() => updatePreview());
   rtl(fPreview.add(pv, 'info').name('צעד').listen().disable());
@@ -257,6 +267,8 @@ export function createStoryboardPanel(gui, hooks) {
     if (!a || !b) throw new Error(`לצעד ${i + 1} אין סצנה`);
     const act = activeStep(loc);
     const s = sb.steps[act];
+    shownStep = act;
+    showText();
     pv.info = `${act + 1} (${s.id}) · ${loc.phase === 'hold' ? 'עצירה' : 'מעבר'} ${loc.local.toFixed(2)}${s.text.title ? ` · ${s.text.title}` : ''}`;
     await tr.show(a, b, data, t);
     if (!pv.on) {
@@ -300,6 +312,7 @@ export function createStoryboardPanel(gui, hooks) {
   /** אחרי כל שינוי. timeline: השינוי משפיע על הציר (סצנה, hold, מעבר, סדר). */
   function changed(timeline) {
     ui.state = `${sb.steps.length} צעדים · ${dirty() ? 'יש שינויים שלא נשמרו' : 'שמור'}`;
+    showText();
     if (!timeline) return;
     tl = timelineFor(sb);
     warnings.textContent = tl.warnings.join('\n');
@@ -340,6 +353,7 @@ export function createStoryboardPanel(gui, hooks) {
     /** מצב המעבר נסגר (כפתור היציאה או כיבוי התצוגה המקדימה) */
     onTransitionExit() {
       pv.on = false;
+      showText();
       fPreview.controllers[0].updateDisplay();
     },
   };
