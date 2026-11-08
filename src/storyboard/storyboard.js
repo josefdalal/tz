@@ -24,9 +24,20 @@ export function getTransition(name) {
   }
 }
 
-/** הציר של סטוריבורד, עם המעברים מהמאגר. אזהרות נוספות על סצנות חסרות. */
+/** סגנון מעבר (transition-styles/) לפי שם, או null. */
+export function getStyle(name) {
+  const file = registry.transitionStyle?.[name];
+  if (!file) return null;
+  try {
+    return fromFile(file, 'transitionStyle').data;
+  } catch {
+    return null;
+  }
+}
+
+/** הציר של סטוריבורד, עם המעברים והסגנונות מהמאגר. אזהרות נוספות על סצנות חסרות. */
 export function timelineFor(storyboard) {
-  const tl = buildTimeline(storyboard, getTransition);
+  const tl = buildTimeline(storyboard, getTransition, getStyle);
   for (const s of storyboard.steps) {
     if (!s.scene) tl.warnings.push(`${s.id}: אין סצנה`);
     else if (!registry.scene[s.scene]) tl.warnings.push(`${s.id}: הסצנה ${s.scene} לא נמצאה`);

@@ -217,7 +217,7 @@ vite.config.js  base יחסי ל Pages, ו plugin פיתוח: /__presets (JSON),
 
 ## שמירה וטעינה
 
-שישה סוגי פריסטים: scene (סצנה שלמה, כולל palette ו motion), palette, motion, transition ו transitionStyle (ראה "מעברים"), ו storyboard (קובץ אחד, `storyboard/storyboard.json`, ראה docs/storyboard.md סעיף ג). לסוג יכול להיות `normalize` שרץ אחרי המיזוג; storyboard משתמש בו כדי להשלים כל צעד מול `defaultStep`, כי מערכים לא ממוזגים. כל פריסט הוא קובץ JSON בתיקייה שלו, ושם הקובץ הוא שם הפריסט (אותיות, ספרות, _ ו -). שלושת הראשונים בתיקיית "פריסטים" בפאנל (`PANEL_KINDS`), והמעברים בתיקיית "מעבר".
+שישה סוגי פריסטים: scene (סצנה שלמה, כולל palette ו motion), palette, motion, transition ו transitionStyle (ראה "מעברים"), ו storyboard (קובץ אחד, `storyboard/storyboard.json`, ראה docs/storyboard.md סעיף ג; השדה `style` שלו הוא סגנון מעבר מ transition-styles/ לכל מעבר בלי קובץ משלו). לסוג יכול להיות `normalize` שרץ אחרי המיזוג; storyboard משתמש בו כדי להשלים כל צעד מול `defaultStep`, כי מערכים לא ממוזגים. כל פריסט הוא קובץ JSON בתיקייה שלו, ושם הקובץ הוא שם הפריסט (אותיות, ספרות, _ ו -). שלושת הראשונים בתיקיית "פריסטים" בפאנל (`PANEL_KINDS`), והמעברים בתיקיית "מעבר".
 
 כל קובץ מתחיל ב `version` וב `type`, ואחריהם השדות של אותו חלק בסצנה. בטעינה, `fromFile` מריץ migrations לפי הגרסה ואז מבצע מיזוג עמוק עם ברירות המחדל: שדה חסר מקבל ברירת מחדל, מערך מוחלף בשלמותו, וערך מסוג שגוי נדחה. לכן פרמטר חדש מוסיפים רק ל `defaultScene`, וקבצים ישנים ממשיכים לעבוד. את `SCHEMA_VERSION` מעלים רק כששדה משנה שם או מקום, ואז מוסיפים פונקציה ל `migrations`.
 

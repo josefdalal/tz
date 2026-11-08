@@ -103,6 +103,9 @@ export function createStoryboardPanel(gui, hooks) {
   rtl(fSb.add(ui, 'status').name('מצב').listen().disable());
   rtl(fSb.add(ui, 'state').name('קובץ').listen().disable());
   const playbackCtrl = fSb.add(sb, 'playback', playbackModes).name('ניגון בנגן').onChange(() => changed(false));
+  // סגנון מעבר אחד לכל המעברים, חוץ מצעד שבחרו לו קובץ מעבר משלו
+  const styleOptions = () => ({ '(ברירת מחדל)': '', ...Object.fromEntries(styleNames().map((n) => [n, n])) });
+  const styleCtrl = fSb.add(sb, 'style', styleOptions()).name('סגנון מעבר לכל הסצנות').onChange(() => { changed(true); buildSteps(); });
   const warnings = document.createElement('div');
   warnings.className = 'tz-warnings';
   fSb.$children.appendChild(warnings);
@@ -114,13 +117,16 @@ export function createStoryboardPanel(gui, hooks) {
 
   const sceneNames = () => Object.keys(registry.scene ?? {}).sort((a, b) => a.localeCompare(b));
   const transitionNames = () => Object.keys(registry.transition ?? {}).sort((a, b) => a.localeCompare(b));
+  function styleNames() {
+    return Object.keys(registry.transitionStyle ?? {}).sort((a, b) => a.localeCompare(b));
+  }
 
   /** מעברים שמתאימים לצעד i (from הסצנה שלו, to של הבא), ו"ללא". מעבר שנבחר ולא מתאים נשאר, עם סימון. */
   function transitionOptions(i) {
     const step = sb.steps[i];
     const next = sb.steps[i + 1];
     if (!next) return { 'ללא (צעד אחרון)': '' };
-    const opts = { 'ללא (ברירת מחדל)': '' };
+    const opts = { [sb.style ? `ללא (סגנון ${sb.style})` : 'ללא (ברירת מחדל)']: '' };
     for (const n of transitionNames()) {
       const d = getTransition(n);
       if (d && d.from === step.scene && d.to === next.scene) opts[n] = n;
@@ -304,6 +310,8 @@ export function createStoryboardPanel(gui, hooks) {
     savedJSON = JSON.stringify(serialize(sb));
     playbackCtrl.object = sb;
     playbackCtrl.updateDisplay();
+    styleCtrl.object = sb;
+    styleCtrl.updateDisplay();
     changed(true);
     buildSteps();
   }
@@ -331,11 +339,12 @@ export function createStoryboardPanel(gui, hooks) {
   // קובץ שהשתנה בדיסק (שמירה, pull) או סצנה ומעבר חדשים. בלי שינויים מקומיים, נטען מהקובץ.
   // הצעדים נבנים מחדש רק כשמשהו השתנה, כדי לא לקטוע הקלדה.
   let lastSig = '';
-  const signature = () => JSON.stringify([sceneNames(), transitionNames(), registry.storyboard?.[STORYBOARD_NAME] ?? null]);
+  const signature = () => JSON.stringify([sceneNames(), transitionNames(), styleNames(), registry.storyboard?.[STORYBOARD_NAME] ?? null]);
   hooks.onPresetsChange(() => {
     const sig = signature();
     if (sig === lastSig) return;
     lastSig = sig;
+    styleCtrl.options(styleOptions());
     if (!dirty() && JSON.stringify(serialize(toWorking(loadStoryboard()))) !== savedJSON) {
       reload();
       return;

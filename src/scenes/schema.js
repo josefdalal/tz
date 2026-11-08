@@ -146,11 +146,13 @@ export const defaultStep = {
 };
 
 export const playbackModes = ['scrub', 'step'];
-export const defaultStoryboard = { playback: 'scrub', steps: [] };
+// style: שם של סגנון ב transition-styles/ לכל מעבר שאין לו קובץ משלו ('' = defaultTransitionStyle)
+export const defaultStoryboard = { playback: 'scrub', style: '', steps: [] };
 
 /** השלמת כל צעד מול ברירות המחדל. deepMerge מחליף מערכים בשלמותם, ולכן הצעדים מושלמים כאן. */
 function normalizeStoryboard(data) {
   if (!playbackModes.includes(data.playback)) data.playback = defaultStoryboard.playback;
+  if (typeof data.style !== 'string') data.style = '';
   const used = new Set();
   data.steps = data.steps
     .filter((s) => s !== null && typeof s === 'object' && !Array.isArray(s))

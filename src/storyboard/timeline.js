@@ -14,10 +14,17 @@ import { deepMerge } from '../util/merge.js';
 /**
  * @param {{steps: object[]}} storyboard אחרי fromFile (צעדים מושלמים)
  * @param {(name: string) => object|null} getTransition נתוני מעבר מלאים לפי שם (אחרי fromFile), או null
+ * @param {(name: string) => object|null} [getStyle] סגנון מעבר לפי שם (transition-styles), או null
  * @returns {{ total: number, steps: object[], warnings: string[] }}
  */
-export function buildTimeline(storyboard, getTransition) {
+export function buildTimeline(storyboard, getTransition, getStyle = () => null) {
   const warnings = [];
+  // סגנון הסטוריבורד: לכל מעבר שאין לו קובץ משלו
+  let style = null;
+  if (storyboard.style) {
+    style = getStyle(storyboard.style);
+    if (!style) warnings.push(`סגנון המעבר ${storyboard.style} לא נמצא, ברירת מחדל`);
+  }
   const steps = [];
   const list = storyboard.steps;
   let pos = 0;
@@ -48,8 +55,8 @@ export function buildTimeline(storyboard, getTransition) {
           warnings.push(`${s.id}: המעבר ${s.transition} הוא ${data.from} אל ${data.to}, הצעדים הם ${s.scene} אל ${next.scene}`);
         if (data) name = s.transition;
       }
-      // בלי קובץ: סגנון וגלילה ברירת מחדל, עם הסצנות של הצעדים
-      if (!data) data = deepMerge(defaultTransition, { from: s.scene, to: next.scene });
+      // בלי קובץ: סגנון הסטוריבורד (או ברירת המחדל) וגלילה ברירת מחדל, עם הסצנות של הצעדים
+      if (!data) data = deepMerge(defaultTransition, { ...(style ?? {}), from: s.scene, to: next.scene });
       const distance = Math.max(1, data.scroll.distance);
       entry.transition = {
         name, // null כשאין קובץ (ברירת מחדל)
