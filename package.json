@@ -14,6 +14,7 @@
     "url": "git+https://github.com/josefdalal/tz.git"
   },
   "dependencies": {
+    "@fontsource-variable/noto-sans-hebrew": "^5.3.0",
     "culori": "^4.0.2",
     "gsap": "^3.15.1",
     "lenis": "^1.3.27",

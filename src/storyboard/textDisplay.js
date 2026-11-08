@@ -5,6 +5,7 @@
 // מיקום: x ו y הם מרכז התיבה, 0 עד 1 על פני האזור הבטוח בייחוס 16:9 (כמו מיקום של צורה),
 // כך שהטקסט נשאר באותו מקום יחסי בכל גודל מסך. ערכים מחוץ לטווח מגיעים לשאר ה viewport.
 
+import '@fontsource-variable/noto-sans-hebrew/wdth.css'; // משקל 100 עד 900 ורוחב 62.5% עד 100%, מאוחסן בבנייה
 import { safeRect, orientationOf } from '../scenes/frame.js';
 
 const TEXT_FRAME = { reference: '16:9' };
@@ -13,13 +14,15 @@ const CSS = `
 .tz-text {
   position: fixed; left: 0; top: 0; z-index: 2; box-sizing: border-box; direction: rtl;
   width: max-content; max-width: min(36em, calc(100vw - 32px)); padding: 10px 14px;
-  font: 15px/1.5 system-ui, sans-serif; color: #111; background: rgba(255, 255, 255, 0.85);
+  font: 400 15px/1.5 'Noto Sans Hebrew Variable', system-ui, sans-serif; font-stretch: 100%;
+  color: #111; background: rgba(255, 255, 255, 0.85);
   will-change: transform, opacity;
 }
 .tz-text[hidden] { display: none; }
 .tz-text.tz-draggable { cursor: move; user-select: none; }
 .tz-text.tz-draggable:hover { outline: 1px dashed rgba(0, 0, 0, 0.5); }
-.tz-text h2 { margin: 0; font-size: 1.25em; line-height: 1.3; }
+/* כותרת: Noto Sans Hebrew Condensed Black (רוחב 75%, משקל 900) */
+.tz-text h2 { margin: 0; font-size: 1.25em; line-height: 1.3; font-weight: 900; font-stretch: 75%; }
 .tz-text p { margin: 0.3em 0 0; white-space: pre-line; }
 .tz-text a { display: inline-block; margin-top: 0.4em; color: inherit; }
 `;

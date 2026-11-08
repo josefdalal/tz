@@ -147,7 +147,7 @@
 
 ## ספריות
 
-Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noise, culori (אינטרפולציית צבע ב OKLCH), lil-gui (פאנל השליטה, רק בעורך). פריסה ל GitHub Pages דרך GitHub Actions.
+Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noise, culori (אינטרפולציית צבע ב OKLCH), lil-gui (פאנל השליטה, רק בעורך), @fontsource-variable/noto-sans-hebrew (הפונט של הטקסט, מאוחסן בבנייה; wdth.css נותן משקל ורוחב). בטקסט הזמני: כותרת Noto Sans Hebrew Condensed Black (משקל 900, רוחב 75%), גוף ברגיל (400, רוחב 100%). פריסה ל GitHub Pages דרך GitHub Actions.
 
 ## שני עמודים
 
