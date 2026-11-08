@@ -151,10 +151,10 @@ Vite ו npm. three, gsap (ScrollTrigger), lenis (גלילה רכה), simplex-noi
 
 ## שני עמודים
 
-- `index.html`: הנגן, מה שהגולש רואה. בלי פאנל, בלי worker ובלי דגימה. מציג רק סצנות אפויות.
+- `index.html`: הנגן, מה שהגולש רואה. בלי פאנל, בלי worker ובלי דגימה. מציג את storyboard.json השמור בגלילה, ורק סצנות אפויות; סצנה לא אפויה בסטוריבורד מציגה הודעה. בעורך, "פתיחה בעמוד הראשי" בתיקיית "סטוריבורד" פותח אותו.
 - `editor.html`: העורך, עם הפאנל תמיד פעיל. בזמן פיתוח: http://localhost:5173/editor.html.
 
-שני העמודים בנויים על אותו מנוע, הבמה ב `src/engine/stage.js`. הבמה מחזיקה את המאגר, הרינדור, התנועה, הפיזיקה, המצביע, המסגרת והפריסה, החלה של גיאומטריה ולולאת הפריים. מה שתלוי בעורך (פאנל, worker, פריסטים ושמירה, אפייה, מצב מעבר, ייצוא) נמצא ב `src/editor/main.js` ובמודולים שרק הוא מייבא. שני העמודים הם `build.rolldownOptions.input` ב vite.config.js, ובבנייה lil-gui, ה worker ו gsap נכנסים רק לקוד של העורך. אין יותר `?debug`.
+שני העמודים בנויים על אותו מנוע, הבמה ב `src/engine/stage.js`. הבמה מחזיקה את המאגר, הרינדור, התנועה, הפיזיקה, המצביע, המסגרת והפריסה, החלה של גיאומטריה ולולאת הפריים. מה שתלוי בעורך (פאנל, worker, פריסטים ושמירה, אפייה, מצב מעבר, ייצוא) נמצא ב `src/editor/main.js` ובמודולים שרק הוא מייבא. שני העמודים הם `build.rolldownOptions.input` ב vite.config.js, ובבנייה lil-gui וה worker נכנסים רק לקוד של העורך. gsap (ל easing של המעברים) ו lenis נכנסים גם לנגן. הליבה של מעבר (`src/transitions/runner.js`) משותפת: מצב המעבר בעורך והנגן משתמשים בה. אין יותר `?debug`.
 
 ## מבנה
 
@@ -164,7 +164,7 @@ editor.html  העורך
 src/
   engine/    stage.js      הבמה: המנוע המשותף לנגן ולעורך
   editor/    main.js       העורך: פאנל, worker, פריסטים, אפייה, מעבר, ייצוא, שמירה אוטומטית
-  player/    main.js       הנגן (כרגע סצנה אפויה אחת; בסעיף ה: הסטוריבורד)
+  player/    main.js       הנגן: הסטוריבורד בגלילה (Lenis, snap), מעברים דרך runner.js, טקסט זמני
   sim/       particles.js  מאגר שגדל: x, y, vx, vy, homeX, homeY, r, targetR, colorT, phase,
                            offX, offY, pulse, drawR, imgMix, imgColor (vec3),
                            localX, localY, localR, edge, rand (יעד במרחב המקומי)
@@ -188,6 +188,7 @@ src/
              persist.js    localStorage, ייצוא וייבוא של קובץ JSON
   transitions/ prepare.js  התאמה, עודפים וחוסרים, צבעים לשני הצדדים, סדר
              evaluate.js   נקודות קצה, evaluateAt(t) טהור, checksum, lerpInto
+             runner.js     הליבה של מעבר, משותפת לעורך ולנגן: צדדים, התקנה, מצב טהור, הזזה יחסית, שכבת על
              mode.js       מצב מעבר בעורך: טעינה ודגימה, ניגון, הפיכות, שמירה, show() לתצוגה המקדימה של הסטוריבורד
   render/    renderer.js   Three.js, שיידר שטוח וכדור
              palette.js    טבלת צבעים מאינטרפולציה ב OKLCH
@@ -198,7 +199,7 @@ src/
              frameOverlay.js  מסגרת מדומה ואזור בטוח מעל הקנבס (עורך בלבד)
   storyboard/ timeline.js  ציר הגלילה, טהור: buildTimeline, locate (גלילה אל צעד, שלב ו t מקומי), snapTarget
              storyboard.js  טעינת storyboard.json והמעברים מהמאגר
-             textDisplay.js  תצוגת טקסט זמנית בפינת המסגרת (תצוגה מקדימה בעורך, ובהמשך הנגן)
+             textDisplay.js  תצוגת טקסט זמנית: מיקום לפי text.x ו text.y, fade במעבר, גרירה בעורך
   util/      rng.js, merge.js (deepMerge, assignInPlace)
 scenes/      פריסטים של סצנה שלמה, קובץ JSON לכל אחד
 palettes/    פריסטים של פלטה (scene.palette)

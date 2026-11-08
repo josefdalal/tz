@@ -1,39 +1,118 @@
-// הנגן (index.html). בלי פאנל, בלי worker ובלי דגימה: רק סצנות אפויות (baked/*.tzb).
+// הנגן (index.html): הסטוריבורד בגלילה. בלי פאנל, בלי worker ובלי דגימה: רק סצנות אפויות.
+// גרסה בסיסית של docs/storyboard.md סעיף ה: גלילה רכה (Lenis), מעברים לפי הגלילה,
+// snap לקצה המעבר, וטקסט זמני עם fade. עדיין בלי מחוון התקדמות ובלי מצב step.
 //
-// סעיף ב (פיצול לשני עמודים): נגן מינימלי שמציג סצנה אחת, כדי לוודא שהמנוע המשותף
-// עובד לבד. בסעיף ה הוא יוחלף בנגן הסטוריבורד (storyboard.json, גלילה, מעברים).
-//
-// בחירת סצנה: ?scene=<שם>, אחרת הסצנה האפויה הראשונה לפי סדר האלפבית.
+// הדף עצמו נגלל (אלמנט #scroll בגובה הציר), והקנבס קבוע. מיקום הגלילה עובר דרך locate
+// ו viewAt, אותן פונקציות של התצוגה המקדימה בעורך, אל הליבה של המעברים (runner.js).
 
+import Lenis from 'lenis';
 import { createStage } from '../engine/stage.js';
-import { fromFile } from '../scenes/schema.js';
-import { registry } from '../scenes/presets.js';
+import { fromFile, defaultScroll } from '../scenes/schema.js';
+import { registry, onPresetsChange } from '../scenes/presets.js';
 import { loadBakedGeometry } from '../scenes/bakedFiles.js';
+import { loadStoryboard, timelineFor } from '../storyboard/storyboard.js';
+import { locate, activeStep, viewAt, textOpacity, snapTarget } from '../storyboard/timeline.js';
+import { createTransitionRunner } from '../transitions/runner.js';
+import { createTextDisplay } from '../storyboard/textDisplay.js';
 
 const canvas = document.getElementById('stage');
 const status = document.getElementById('status');
+const spacer = document.getElementById('scroll');
 const say = (text) => {
   status.textContent = text;
   status.hidden = !text;
 };
 
-const scenes = registry.scene ?? {};
-const wanted = new URLSearchParams(location.search).get('scene');
-const bakedNames = Object.keys(scenes).filter((n) => scenes[n].baked).sort((a, b) => a.localeCompare(b));
-const name = wanted ?? bakedNames[0];
+// בזמן פיתוח: storyboard.json, סצנה או מעבר שנשמרו בעורך נטענים מחדש
+if (import.meta.hot) onPresetsChange(() => location.reload());
 
-if (!name || !scenes[name]) {
-  say(wanted ? `סצנה לא נמצאה: ${wanted}` : 'אין סצנות אפויות. אפשר לאפות סצנה בעורך (editor.html).');
-} else {
-  const scene = fromFile(scenes[name], 'scene').data;
-  if (!scene.baked) {
-    say(`הסצנה ${name} לא אפויה. הנגן מציג רק סצנות אפויות; אפשר לאפות אותה בעורך.`);
-  } else {
-    const stage = createStage({ canvas, scene });
-    stage.run();
-    loadBakedGeometry(scene.baked)
-      .then((g) => stage.applyGeometry(g))
-      .catch((e) => say(`שגיאה בטעינת ${scene.baked.file ?? name}: ${e.message}`));
-    if (import.meta.env.DEV) window.__tzPlayer = { stage, scene };
+async function main() {
+  const sb = loadStoryboard();
+  if (!sb || sb.steps.length === 0) return say('אין סטוריבורד. אפשר ליצור אותו בעורך (editor.html), בתיקייה "סטוריבורד".');
+  const tl = timelineFor(sb);
+  for (const w of tl.warnings) console.warn('[tz]', w);
+
+  const names = [...new Set(sb.steps.map((s) => s.scene))];
+  const missing = names.filter((n) => !registry.scene?.[n]);
+  if (missing.length) return say(`סצנות שלא נמצאו: ${missing.join(', ')}`);
+  const scenes = Object.fromEntries(names.map((n) => [n, fromFile(registry.scene[n], 'scene').data]));
+  const unbaked = names.filter((n) => !scenes[n].baked);
+  if (unbaked.length) {
+    return say(`העמוד הראשי מציג רק סצנות אפויות. לא אפויות: ${unbaked.join(', ')}. אפשר לאפות אותן בעורך, בתיקייה "אפייה".`);
   }
+
+  say('טוען...');
+  const geoms = Object.fromEntries(await Promise.all(names.map(async (n) => [n, await loadBakedGeometry(scenes[n].baked)])));
+  say('');
+
+  const text = createTextDisplay();
+  const stage = createStage({
+    canvas,
+    scene: scenes[names[0]],
+    touchAction: 'pan-y', // הדף נגלל במגע; דחיפת עיגולים במגע עדיין לא מוגדרת (סעיף ה)
+    onFrame: (s) => text.place(s.view),
+  });
+  const runner = createTransitionRunner({
+    particles: stage.particles,
+    renderer: stage.renderer,
+    rng: stage.rng,
+    getFrame: () => ({ view: stage.view, orientation: stage.orientation, width: stage.width, height: stage.height }),
+    onRebind: () => stage.renderer.rebind(),
+  });
+
+  const setHeight = () => { spacer.style.height = `${Math.ceil(tl.total + window.innerHeight)}px`; };
+  setHeight();
+  stage.onResize(() => {
+    stage.updateFrame();
+    setHeight();
+    if (runner.ready) runner.onFrame();
+  });
+
+  const lenis = new Lenis({ autoRaf: false, lerp: defaultScroll.smoothing });
+
+  // snap: כשהגלילה נעצרת באמצע מעבר ל snapDelay, היא ממשיכה לקצה בכיוון האחרון
+  let lastInput = performance.now();
+  for (const type of ['wheel', 'touchmove', 'keydown', 'pointerdown']) {
+    window.addEventListener(type, () => { lastInput = performance.now(); }, { passive: true });
+  }
+  let snapTo = null;
+
+  const loc = {};
+  let cur = { a: null, b: null, data: null };
+
+  stage.run(() => {
+    lenis.raf(performance.now());
+    const y = lenis.scroll;
+    locate(tl, y, loc);
+
+    // ההחלקה והשהיית ה snap מגיעות מקובץ המעבר הקרוב (היוצא, או הנכנס בצעד האחרון)
+    const step = tl.steps[loc.step];
+    const sc = (step.transition ?? tl.steps[loc.step - 1]?.transition)?.scroll ?? defaultScroll;
+    lenis.options.lerp = Math.min(1, Math.max(0.01, sc.smoothing));
+    if (loc.phase === 'transition') {
+      if (snapTo === null && !lenis.isScrolling && performance.now() - lastInput > sc.snapDelay) {
+        snapTo = snapTarget(tl, y, lenis.direction || 0);
+        lenis.scrollTo(snapTo);
+      }
+    } else {
+      snapTo = null;
+    }
+    if (snapTo !== null && performance.now() - lastInput < 50) snapTo = null; // קלט חדש מבטל את ה snap
+
+    const v = viewAt(tl, loc);
+    if (v.a !== cur.a || v.b !== cur.b || v.data !== cur.data) {
+      cur = { a: v.a, b: v.b, data: v.data };
+      runner.setSides({ scene: scenes[v.a], geom: geoms[v.a] }, { scene: scenes[v.b], geom: geoms[v.b] }, v.data, v.t);
+    }
+
+    text.show(sb.steps[activeStep(loc)].text, textOpacity(loc));
+    return runner.frame(v.t);
+  });
+
+  if (import.meta.env.DEV) window.__tzPlayer = { stage, runner, lenis, tl, sb };
 }
+
+main().catch((e) => {
+  say(`שגיאה: ${e.message}`);
+  console.error(e);
+});

@@ -1,23 +1,13 @@
-// מצב "מעבר" בעורך: שתי סצנות, סרגל t, ניגון, ובדיקת הפיכות.
-//
-// המצב הטהור (evaluate.js) נכתב ל homeX, homeY, targetR, colorU, overlayW. הפיזיקה רצה
-// במרחב יחסי: בכל פריים העיגול זז בדיוק כמו המטרה שלו (x += Δhome), והקפיץ, ההתנגשויות
-// והעכבר פועלים רק על הסטייה ממנה. התנועה הפנימית ושכבת ההתנגשויות מוכפלות ב overlayW,
-// שדועך בזמן התעופה וחוזר בנחיתה.
+// מצב "מעבר" בעורך: שתי סצנות, סרגל t, ניגון, גלילה, ובדיקת הפיכות.
+// הליבה (מצב טהור, הזזה יחסית, שכבת על) ב runner.js, משותפת עם הנגן.
 
-import { gsap } from 'gsap';
-import { interpolate, formatHex } from 'culori';
 import { fromFile, defaultTransitionStyle, defaultScroll } from '../scenes/schema.js';
 import { registry, savePreset, normalizeName } from '../scenes/presets.js';
 import { loadBakedGeometry } from '../scenes/bakedFiles.js';
-import { computeTransform } from '../scenes/layout.js';
-import { safeRect, resolveLayout } from '../scenes/frame.js';
 import { sampleOnce } from '../shapes/sampling.js';
-import { buildPaletteLUT } from '../render/palette.js';
-import { growParticles } from '../sim/particles.js';
 import { assignInPlace, clone } from '../util/merge.js';
-import { sideData, prepareTransition, computeOrder } from './prepare.js';
-import { createEnds, resolveEndpoints, makeEvaluator, evaluateAt, stateChecksum, lerpInto } from './evaluate.js';
+import { stateChecksum } from './evaluate.js';
+import { createTransitionRunner } from './runner.js';
 
 export const CURRENT = '(נוכחית)';
 export const easeOptions = [
@@ -33,14 +23,6 @@ export const leftoverModes = ['shrink', 'exit', 'merge'];
 export const spawnModes = ['grow', 'split', 'edges', 'direction'];
 export const loopModes = ['none', 'loop', 'pingpong'];
 
-const parseEase = (name) => {
-  try {
-    return gsap.parseEase(name);
-  } catch {
-    return null;
-  }
-};
-
 /**
  * @param deps {
  *   particles, renderer, rng,
@@ -51,7 +33,6 @@ const parseEase = (name) => {
  * }
  */
 export function createTransitionMode(deps) {
-  const p = deps.particles;
   const style = clone(defaultTransitionStyle);
   const scroll = clone(defaultScroll); // נשמר בקובץ המעבר, לא בסגנון
   const ui = {
@@ -64,26 +45,34 @@ export function createTransitionMode(deps) {
   let lastScrollT = 0; // ה t שהגלילה כתבה; שינוי אחר (גרירת הסרגל) מזיז גם את היעד
 
   let active = false;
-  let sides = null; // { A, B }: { scene, geom, data, safe }
-  let prep = null;
-  let ends = null;
-  let ev = null;
-  let focusScreen = [0, 0];
-  let lastT = NaN;
-  let dirty = true;
-  let shiftNext = true; // false אחרי הכנה מחדש: העיגולים זורמים למקום החדש ולא קופצים
-  let prevHomeX = new Float32Array(0);
-  let prevHomeY = new Float32Array(0);
   let dir = 1;
-  let bgInterp = null;
-  let background = '#000000';
-  const motionOut = {};
-  const physicsOut = {};
-  const lutA = new Uint8Array(256 * 4);
-  const lutB = new Uint8Array(256 * 4);
   let seen = new Map(); // t (מעוגל) אל checksum
   let revisits = 0;
   let mismatches = 0;
+
+  const runner = createTransitionRunner({
+    particles: deps.particles,
+    renderer: deps.renderer,
+    rng: deps.rng,
+    getFrame: deps.getFrame,
+    onRebind: deps.onRebind,
+    onEvaluate: checkReversible,
+  });
+
+  // הפיכות: אותו t חייב לתת בדיוק אותו מצב טהור
+  function checkReversible(t) {
+    const key = Math.round(t * 10000);
+    const sum = stateChecksum(deps.particles, runner.K);
+    if (seen.has(key)) {
+      revisits++;
+      if (seen.get(key) !== sum) mismatches++;
+      ui.reversible = mismatches
+        ? `⚠ ${mismatches} מתוך ${revisits} חזרות לאותו t נתנו מצב שונה`
+        : `✓ ${revisits} חזרות לאותו t, כולן זהות`;
+    } else {
+      seen.set(key, sum);
+    }
+  }
 
   const sceneNames = () => [CURRENT, ...Object.keys(registry.scene ?? {}).sort((x, y) => x.localeCompare(y))];
 
@@ -99,48 +88,6 @@ export function createTransitionMode(deps) {
     // סצנה לא אפויה נדגמת פעם אחת בכניסה למצב
     const geom = scene.baked ? await loadBakedGeometry(scene.baked) : await sampleOnce(scene);
     return { scene, geom };
-  }
-
-  /** טרנספורמציות ונתוני צד במסגרת הנוכחית (כל שינוי מסגרת מחשב אותם מחדש). */
-  function layoutSides() {
-    const { view, orientation } = deps.getFrame();
-    for (const [side, lut] of [[sides.A, lutA], [sides.B, lutB]]) {
-      side.safe = safeRect(side.scene.frame, orientation, view);
-      side.T = computeTransform(side.geom.meta, resolveLayout(side.scene, orientation), side.safe);
-      side.data = sideData(side, lut);
-    }
-    focusScreen = [view.x0 + style.focus[0] * view.w, view.y0 + style.focus[1] * view.h];
-  }
-
-  function install() {
-    const { view, width, height } = deps.getFrame();
-    prep = prepareTransition(sides.A.data, sides.B.data, style);
-    const K = prep.K;
-    ends = createEnds(K);
-    resolveEndpoints(prep, sides.A.data, sides.B.data, style, view, ends);
-    computeOrder(prep, ends, style, focusScreen, sides.A.data);
-    ev = makeEvaluator(style, parseEase);
-    if (growParticles(p, K, deps.rng, width, height)) deps.onRebind();
-    prevHomeX = new Float32Array(K);
-    prevHomeY = new Float32Array(K);
-    const c = prep.color;
-    for (let s = 0; s < K; s++) {
-      p.colorT[s] = c.cT[s];
-      p.imgMix[s] = c.cMix[s];
-      p.colorT2[s] = c.cT2[s];
-      p.imgMix2[s] = c.cMix2[s];
-      for (let k = 0; k < 3; k++) {
-        p.imgColor[s * 3 + k] = c.cImg[s * 3 + k];
-        p.imgColor2[s * 3 + k] = c.cImg2[s * 3 + k];
-      }
-    }
-    for (let s = K; s < p.active; s++) p.r[s] = p.targetR[s] = p.drawR[s] = 0;
-    p.count = K;
-    p.active = K;
-    deps.renderer.invalidateColors();
-    resetReversibility();
-    ui.counts = `${prep.pairsCount} זוגות, ${prep.leftovers} עודפים, ${prep.spawns} חוסרים`;
-    dirty = true;
   }
 
   function resetReversibility() {
@@ -195,27 +142,18 @@ export function createTransitionMode(deps) {
   }
 
   async function enterSides(A, B) {
-    sides = { A, B };
-    buildPaletteLUT(A.scene.palette.stops, lutA, 256, A.scene.palette.space);
-    buildPaletteLUT(B.scene.palette.stops, lutB, 256, B.scene.palette.space);
-    deps.renderer.setPalette(A.scene.palette.stops, A.scene.palette.space);
-    deps.renderer.setPalette2(B.scene.palette.stops, B.scene.palette.space);
-    bgInterp = interpolate([A.scene.palette.background, B.scene.palette.background], 'oklch');
-    layoutSides();
+    resetReversibility();
+    runner.setSides(A, B, style, ui.t);
     active = true;
-    install();
-    // כניסה: העיגולים מוצבים במצב הטהור של t הנוכחי
-    evaluate();
-    for (let s = 0; s < prep.K; s++) {
-      p.x[s] = p.homeX[s];
-      p.y[s] = p.homeY[s];
-      p.vx[s] = p.vy[s] = p.offX[s] = p.offY[s] = 0;
-      p.r[s] = p.drawR[s] = p.targetR[s];
-    }
-    shiftNext = true;
+    updateCounts();
     deps.onEnter();
     ui.status = `מעבר: ${ui.a} אל ${ui.b}`;
     return ui.status;
+  }
+
+  function updateCounts() {
+    const prep = runner.prep;
+    ui.counts = `${prep.pairsCount} זוגות, ${prep.leftovers} עודפים, ${prep.spawns} חוסרים`;
   }
 
   function exit() {
@@ -223,34 +161,10 @@ export function createTransitionMode(deps) {
     active = false;
     shownKey = null;
     ui.playing = false;
-    for (let s = 0; s < p.capacity; s++) {
-      p.colorU[s] = 0;
-      p.overlayW[s] = 1;
-      p.imgMix2[s] = 0;
-    }
-    deps.renderer.invalidateColors();
+    runner.release();
     deps.onExit();
     ui.status = '';
     return 'חזרה לעריכת סצנה';
-  }
-
-  function evaluate() {
-    const unit = lerp(sides.A.safe.unit, sides.B.safe.unit, ui.t);
-    evaluateAt(ui.t, prep, ends, style, ev, focusScreen, unit, p);
-    // הפיכות: אותו t חייב לתת בדיוק אותו מצב טהור
-    const key = Math.round(ui.t * 10000);
-    const sum = stateChecksum(p, prep.K);
-    if (seen.has(key)) {
-      revisits++;
-      if (seen.get(key) !== sum) mismatches++;
-      ui.reversible = mismatches
-        ? `⚠ ${mismatches} מתוך ${revisits} חזרות לאותו t נתנו מצב שונה`
-        : `✓ ${revisits} חזרות לאותו t, כולן זהות`;
-    } else {
-      seen.set(key, sum);
-    }
-    lastT = ui.t;
-    dirty = false;
   }
 
   /**
@@ -285,7 +199,7 @@ export function createTransitionMode(deps) {
     ui.scrollTarget = target === 0 || target === 1 ? `${target} (נצמד)` : target.toFixed(3);
   }
 
-  /** לפני התנועה הפנימית: ניגון, מצב טהור, הזזה יחסית, ופרמטרים מעורבבים. */
+  /** לפני התנועה הפנימית: ניגון או גלילה, ואז הליבה. */
   function frame(dt) {
     if (ui.scrollOn) scrollStep(dt);
     else if (ui.playing) {
@@ -297,61 +211,23 @@ export function createTransitionMode(deps) {
       }
       ui.t = t;
     }
-    const K = prep.K;
-    if (dirty || ui.t !== lastT) {
-      prevHomeX.set(p.homeX.subarray(0, K));
-      prevHomeY.set(p.homeY.subarray(0, K));
-      evaluate();
-      if (shiftNext) {
-        for (let s = 0; s < K; s++) {
-          p.x[s] += p.homeX[s] - prevHomeX[s];
-          p.y[s] += p.homeY[s] - prevHomeY[s];
-        }
-      }
-      shiftNext = true;
-    }
-    const t = ui.t;
-    lerpInto(motionOut, sides.A.scene.motion, sides.B.scene.motion, t);
-    lerpInto(physicsOut, sides.A.scene.physics, sides.B.scene.physics, t);
-    physicsOut.pureRadius = true;
-    background = formatHex(bgInterp(t));
-    return {
-      motion: motionOut,
-      physics: physicsOut,
-      unit: lerp(sides.A.safe.unit, sides.B.safe.unit, t),
-      seed: sides.A.scene.seed,
-      background,
-    };
-  }
-
-  /** אחרי התנועה הפנימית: שכבת העל מוכפלת במשקל, שדועך בזמן תעופה. */
-  function afterMotion() {
-    const { offX, offY, pulse, overlayW } = p;
-    for (let s = 0; s < prep.K; s++) {
-      const w = overlayW[s];
-      offX[s] *= w;
-      offY[s] *= w;
-      pulse[s] = 1 + (pulse[s] - 1) * w;
-    }
+    return runner.frame(ui.t);
   }
 
   /** שינוי סגנון: הכנה מחדש. העיגולים לא קופצים, הם זורמים למצב החדש. */
   function onStyle() {
     if (!active) return;
     shownKey = null;
-    layoutSides();
-    install();
-    shiftNext = false;
+    resetReversibility();
+    runner.restyle();
+    updateCounts();
   }
 
   /** המסגרת השתנתה (חלון, תצוגה מקדימה): נקודות הקצה מחושבות מחדש. */
   function onFrame() {
     if (!active) return;
-    layoutSides();
-    const { view } = deps.getFrame();
-    resolveEndpoints(prep, sides.A.data, sides.B.data, style, view, ends);
     resetReversibility();
-    dirty = true;
+    runner.onFrame();
   }
 
   function setFocus(x, y) {
@@ -398,8 +274,8 @@ export function createTransitionMode(deps) {
 
   return {
     get active() { return active; },
-    get background() { return background; },
-    get focusScreen() { return focusScreen; },
+    get background() { return runner.background; },
+    get focusScreen() { return runner.focusScreen; },
     ui,
     style,
     scroll,
@@ -409,7 +285,6 @@ export function createTransitionMode(deps) {
     show,
     exit,
     frame,
-    afterMotion,
     onStyle,
     onFrame,
     setFocus,
@@ -422,5 +297,4 @@ export function createTransitionMode(deps) {
   };
 }
 
-const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);

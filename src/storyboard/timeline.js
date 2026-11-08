@@ -134,3 +134,30 @@ export function stepPosition(tl, index, where = 0) {
   const s = tl.steps[Math.min(Math.max(index, 0), tl.steps.length - 1)];
   return s ? s.holdStart + where * s.hold : 0;
 }
+
+/**
+ * מה מוצג במיקום: זוג סצנות, נתוני מעבר ו t. במעבר, הזוג שלו ב t המקומי. בעצירה,
+ * המעבר היוצא ב t של 0, ובצעד האחרון המעבר הנכנס ב 1. צעד יחיד: אותה סצנה בשני הצדדים.
+ * @returns {{ a: string, b: string, data: object, t: number }|null} null בלי צעדים
+ */
+export function viewAt(tl, loc) {
+  const steps = tl.steps;
+  if (loc.step < 0) return null;
+  const i = loc.step;
+  if (loc.phase === 'transition' || steps[i].transition) {
+    return { a: steps[i].scene, b: steps[i + 1].scene, data: steps[i].transition.data, t: loc.phase === 'transition' ? loc.local : 0 };
+  }
+  if (i > 0) return { a: steps[i - 1].scene, b: steps[i].scene, data: steps[i - 1].transition.data, t: 1 };
+  // נשמר על הציר, כדי שהנתונים יהיו אותו אובייקט בכל פריים (הנגן משווה לפי הפניה)
+  const a = steps[i].scene;
+  tl.solo ??= deepMerge(defaultTransition, { from: a, to: a });
+  return { a, b: a, data: tl.solo, t: 0 };
+}
+
+/**
+ * שקיפות הטקסט: מלא בעצירה. במעבר fade out עד האמצע, שם הטקסט מתחלף (activeStep),
+ * ו fade in של הטקסט הבא עד הסוף.
+ */
+export function textOpacity(loc) {
+  return loc.phase === 'transition' ? Math.abs(1 - 2 * loc.local) : 1;
+}

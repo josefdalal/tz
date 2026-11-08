@@ -40,7 +40,8 @@ const canvas = document.getElementById('stage');
 const scene = initialScene();
 const editor = { preview: 'חלון', showSafe: true };
 const overlay = createFrameOverlay();
-const textDisplay = createTextDisplay(); // טקסט הצעד בתצוגה המקדימה של הסטוריבורד
+// טקסט הצעד בתצוגה המקדימה של הסטוריבורד. גרירה שלו משנה את המיקום של הצעד.
+const textDisplay = createTextDisplay({ onDrag: (x, y) => storyboardPanel?.dragText(x, y) });
 let transition = null;
 let storyboardPanel = null;
 
@@ -397,7 +398,5 @@ if (import.meta.env.DEV) {
 // במצב מעבר, המעבר מספק את פרמטרי הפריים; אחרת הסצנה הנערכת
 stage.run((dt) => {
   if (!transition.active) return null;
-  const f = transition.frame(dt);
-  f.afterMotion = transition.afterMotion;
-  return f;
+  return transition.frame(dt);
 });

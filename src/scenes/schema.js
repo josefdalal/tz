@@ -133,8 +133,9 @@ export const defaultTransition = { from: '', to: '', scroll: defaultScroll, ...d
 
 // סטוריבורד (docs/storyboard.md, סעיף ג): רשימת צעדים. נשמר כ storyboard/storyboard.json.
 // בלוק הטקסט של צעד, במבנה הסופי של docs/text-layer.md. כל שדה אופציונלי.
-// בשלב 6 יתווספו לאותו אובייקט שדות מיקום ונקודות כניסה ויציאה.
-export const defaultStepText = { title: '', body: '', link: { text: '', href: '' } };
+// x ו y: מרכז התיבה, 0 עד 1 על פני האזור הבטוח (ייחוס 16:9), כמו מיקום של צורה.
+// בשלב 6 יתווספו לאותו אובייקט רוחב, יישור, פריסת portrait ונקודות כניסה ויציאה.
+export const defaultStepText = { title: '', body: '', link: { text: '', href: '' }, x: 0.82, y: 0.85 };
 
 export const defaultStep = {
   id: '', // מזהה יציב לצעד, לא תלוי במיקום ברשימה

@@ -6,12 +6,13 @@
 //
 // תצוגה מקדימה: סרגל לאורך כל הסטוריבורד, דרך locate של הנגן. המצב מוצג במצב המעבר:
 // במעבר, הזוג של המעבר ב t המקומי. בעצירה, המעבר היוצא ב t של 0 (או הנכנס ב 1 בצעד האחרון).
-// הטקסט של הצעד הפעיל מוצג בתצוגה הזמנית (storyboard/textDisplay.js), ומתחלף באמצע המעבר.
+// הטקסט של הצעד הפעיל מוצג בתצוגה הזמנית (storyboard/textDisplay.js): fade out עד אמצע
+// המעבר, החלפה, ו fade in. אפשר לגרור אותו על המסגרת, וזה משנה את text.x ו text.y של הצעד.
 
-import { defaultStepText, defaultStoryboard, defaultTransition, playbackModes } from '../scenes/schema.js';
+import { defaultStepText, defaultStoryboard, playbackModes } from '../scenes/schema.js';
 import { registry, savePreset } from '../scenes/presets.js';
 import { loadStoryboard, getTransition, timelineFor, STORYBOARD_NAME } from '../storyboard/storyboard.js';
-import { locate, activeStep, stepPosition } from '../storyboard/timeline.js';
+import { locate, activeStep, stepPosition, viewAt, textOpacity } from '../storyboard/timeline.js';
 import { clone, deepMerge } from '../util/merge.js';
 
 const CSS = `
@@ -63,7 +64,7 @@ function serialize(sb) {
 /**
  * @param gui  שורש הפאנל (lil-gui)
  * @param hooks { transition, refreshTransition(), onPresetsChange(fn), text: createTextDisplay() }
- * @returns {{ onTransitionExit(): void }}
+ * @returns {{ dragText(x, y): void, onTransitionExit(): void }}
  */
 export function createStoryboardPanel(gui, hooks) {
   const tr = hooks.transition;
@@ -79,11 +80,13 @@ export function createStoryboardPanel(gui, hooks) {
   const ui = { status: '', state: '' };
   const pv = { on: false, y: 0, info: '' };
   let shownStep = -1; // הצעד הפעיל בתצוגה המקדימה, לטקסט
+  let shownOpacity = 1; // fade במעבר, כמו בנגן
 
-  /** הטקסט של הצעד הפעיל, רק כשהתצוגה המקדימה דלוקה. נקרא גם אחרי כל הקלדה. */
+  /** הטקסט של הצעד הפעיל, רק כשהתצוגה המקדימה דלוקה. נקרא גם אחרי כל הקלדה וגרירה. */
   function showText() {
-    hooks.text.show(pv.on && shownStep >= 0 ? sb.steps[shownStep]?.text ?? null : null);
+    hooks.text.show(pv.on && shownStep >= 0 ? sb.steps[shownStep]?.text ?? null : null, shownOpacity);
   }
+  const posCtrls = new Map(); // id של צעד אל המחוונים של x ו y, לעדכון בזמן גרירה
 
   const run = async (fn) => {
     try {
@@ -131,6 +134,7 @@ export function createStoryboardPanel(gui, hooks) {
   function buildSteps() {
     const open = new Set(fSteps.folders.filter((f) => !f._closed).map((f) => f._tzId));
     for (const f of [...fSteps.folders]) f.destroy();
+    posCtrls.clear();
     sb.steps.forEach((step, i) => {
       const f = fSteps.addFolder(stepTitle(step, i));
       f._tzId = step.id;
@@ -156,6 +160,11 @@ export function createStoryboardPanel(gui, hooks) {
       const linkText = f.add(t.link, 'text').name('טקסט הקישור').onChange(() => changed(false));
       linkText.$input.dir = 'auto';
       f.add(t.link, 'href').name('כתובת הקישור').onChange(() => changed(false));
+      // מיקום התיבה: מרכז, על פני האזור הבטוח. גם בגרירה על המסגרת בתצוגה המקדימה.
+      posCtrls.set(step.id, [
+        f.add(t, 'x', -0.2, 1.2, 0.001).name('מיקום טקסט x').onChange(() => changed(false)),
+        f.add(t, 'y', -0.2, 1.2, 0.001).name('מיקום טקסט y').onChange(() => changed(false)),
+      ]);
 
       f.add({ go: () => moveStep(i, -1) }, 'go').name('הזזה למעלה').enable(i > 0);
       f.add({ go: () => moveStep(i, 1) }, 'go').name('הזזה למטה').enable(i < sb.steps.length - 1);
@@ -244,39 +253,31 @@ export function createStoryboardPanel(gui, hooks) {
   }
 
   async function showAt(y) {
-    const steps = tl.steps;
     const loc = locate(tl, y);
-    if (loc.step < 0) throw new Error('אין צעדים');
-    const i = loc.step;
-    let a, b, data, t;
-    if (loc.phase === 'transition' || steps[i].transition) {
-      a = steps[i].scene;
-      b = steps[i + 1].scene;
-      data = steps[i].transition.data;
-      t = loc.phase === 'transition' ? loc.local : 0;
-    } else if (i > 0) {
-      a = steps[i - 1].scene;
-      b = steps[i].scene;
-      data = steps[i - 1].transition.data;
-      t = 1;
-    } else {
-      a = b = steps[i].scene;
-      data = deepMerge(defaultTransition, { from: a, to: a });
-      t = 0;
-    }
-    if (!a || !b) throw new Error(`לצעד ${i + 1} אין סצנה`);
+    const v = viewAt(tl, loc);
+    if (!v) throw new Error('אין צעדים');
+    if (!v.a || !v.b) throw new Error(`לצעד ${loc.step + 1} אין סצנה`);
     const act = activeStep(loc);
     const s = sb.steps[act];
     shownStep = act;
+    shownOpacity = textOpacity(loc);
     showText();
     pv.info = `${act + 1} (${s.id}) · ${loc.phase === 'hold' ? 'עצירה' : 'מעבר'} ${loc.local.toFixed(2)}${s.text.title ? ` · ${s.text.title}` : ''}`;
-    await tr.show(a, b, data, t);
+    await tr.show(v.a, v.b, v.data, v.t);
     if (!pv.on) {
       tr.exit(); // כובה בזמן הטעינה
       return;
     }
     hooks.refreshTransition();
   }
+
+  // ---------- עמוד ראשי ----------
+
+  // הנגן קורא את storyboard.json השמור ואת הסצנות האפויות, לא את עותק העבודה
+  fSb.add({ go: () => {
+    if (dirty()) ui.status = 'שים לב: יש שינויים שלא נשמרו, והעמוד הראשי מציג את הקובץ השמור';
+    window.open(new URL('index.html', location.href), 'tz-player');
+  } }, 'go').name('פתיחה בעמוד הראשי');
 
   // ---------- שמירה ----------
 
@@ -351,6 +352,15 @@ export function createStoryboardPanel(gui, hooks) {
 
   return {
     /** מצב המעבר נסגר (כפתור היציאה או כיבוי התצוגה המקדימה) */
+    /** גרירה של תיבת הטקסט על המסגרת: מעדכנת את הצעד המוצג */
+    dragText(x, y) {
+      const s = sb.steps[shownStep];
+      if (!pv.on || !s) return;
+      s.text.x = x;
+      s.text.y = y;
+      for (const c of posCtrls.get(s.id) ?? []) c.updateDisplay();
+      changed(false);
+    },
     onTransitionExit() {
       pv.on = false;
       showText();
