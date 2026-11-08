@@ -125,22 +125,28 @@ export function evaluateAt(t, prep, ends, style, ev, focus, unit, p) {
     let y;
     let rScale = 1;
     if (mode === 'scatter' && hold > 0) {
-      // התפזרות עם החזקה: יציאה לנקודת הפיזור, מנוחה בה לאורך hold מהתעופה, וכניסה ליעד
+      // התפזרות עם החזקה: יציאה לנקודת הפיזור, ריחוף לאורך hold מהתעופה, וכניסה ליעד.
+      // בזמן ההחזקה העיגול ממשיך להתרחק לאט (מ HOLD_IN עד הרדיוס המלא), כדי שאין פריים בלי תנועה.
       const a = rnd[s * 2] * Math.PI * 2;
       const d = spread * Math.sqrt(rnd[s * 2 + 1]);
-      const sx = (ax + bx) / 2 + Math.cos(a) * d;
-      const sy = (ay + by) / 2 + Math.sin(a) * d;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      const s1x = mx + ca * d * HOLD_IN, s1y = my + sa * d * HOLD_IN;
+      const s2x = mx + ca * d, s2y = my + sa * d;
       if (u < half) {
         const q = smooth(u / half);
-        x = ax + (sx - ax) * q;
-        y = ay + (sy - ay) * q;
+        x = ax + (s1x - ax) * q;
+        y = ay + (s1y - ay) * q;
       } else if (u > 1 - half) {
         const q = smooth((u - (1 - half)) / half);
-        x = sx + (bx - sx) * q;
-        y = sy + (by - sy) * q;
+        x = s2x + (bx - s2x) * q;
+        y = s2y + (by - s2y) * q;
       } else {
-        x = sx;
-        y = sy;
+        const q = (u - half) / hold;
+        x = s1x + (s2x - s1x) * q;
+        y = s1y + (s2y - s1y) * q;
       }
     } else if (mode === 'arc' || mode === 'scatter') {
       let cx;
@@ -198,6 +204,9 @@ export function evaluateAt(t, prep, ends, style, ev, focus, unit, p) {
     overlayW[s] = 1 - dip * Math.pow(bump, sharp);
   }
 }
+
+// scatter עם החזקה: ההחזקה מתחילה בחלק הזה מרדיוס הפיזור ומסתיימת ברדיוס המלא
+const HOLD_IN = 0.75;
 
 /** smoothstep בתוך 0 עד 1; מחוץ לטווח (easing שחורג, כמו back) לינארי. */
 function smooth(q) {

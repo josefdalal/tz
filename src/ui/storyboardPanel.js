@@ -9,7 +9,7 @@
 // הטקסט של הצעד הפעיל מוצג בתצוגה הזמנית (storyboard/textDisplay.js): fade out עד אמצע
 // המעבר, החלפה, ו fade in. אפשר לגרור אותו על המסגרת, וזה משנה את text.x ו text.y של הצעד.
 
-import { defaultStepText, defaultStoryboard, playbackModes } from '../scenes/schema.js';
+import { defaultStep, defaultStepText, defaultStoryboard, playbackModes } from '../scenes/schema.js';
 import { registry, savePreset } from '../scenes/presets.js';
 import { loadStoryboard, getTransition, timelineFor, STORYBOARD_NAME } from '../storyboard/storyboard.js';
 import { locate, activeStep, stepPosition, viewAt, textOpacity } from '../storyboard/timeline.js';
@@ -189,7 +189,7 @@ export function createStoryboardPanel(gui, hooks) {
 
   function addStep() {
     const last = sb.steps[sb.steps.length - 1];
-    const step = { id: uniqueId(), scene: last?.scene ?? sceneNames()[0] ?? '', hold: 800, transition: null, text: clone(defaultStepText) };
+    const step = { id: uniqueId(), scene: last?.scene ?? sceneNames()[0] ?? '', hold: defaultStep.hold, transition: null, text: clone(defaultStepText) };
     sb.steps.push(step);
     changed(true);
     buildSteps();

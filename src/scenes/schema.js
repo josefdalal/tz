@@ -142,7 +142,7 @@ export const defaultStepText = { title: '', body: '', link: { text: '', href: ''
 export const defaultStep = {
   id: '', // מזהה יציב לצעד, לא תלוי במיקום ברשימה
   scene: '', // שם סצנה ב scenes/
-  hold: 800, // אורך אזור העצירה, בפיקסלי גלילה
+  hold: 100, // אורך אזור העצירה, בפיקסלי גלילה (בערך שנץ גלגלת אחד, כדי שהמעבר יתחיל מיד)
   transition: null, // שם קובץ ב transitions/ למעבר לצעד הבא, או null (סגנון וגלילה ברירת מחדל)
   text: null, // defaultStepText או null
 };

@@ -99,7 +99,7 @@
 
 **סגנון מעבר** (`defaultTransitionStyle` ב schema.js). ברירת המחדל היא התפזרות שמחזיקה: scatter עם `scatterHold` 0.6, סדר לפי מרחק מהמרכז ו stagger 0.2, כך שכל העיגולים מפוזרים יחד בין t של 0.36 ל 0.64. הפריסטים disperse ו explode כותבים `scatterHold: 0` כדי לשמור על ההתנהגות הקודמת:
 - **matching:** hilbert, nearest (חמדני, הקבוצה הקטנה בוחרת את השכן הפנוי הקרוב), brightness, size, random. כולם עם seed. בשיטות לפי דירוג, הקבוצה הגדולה נדגמת בפיזור שווה, והשאר הם עודפים או חוסרים.
-- **path:** straight; arc (`curvature`, ו `direction`: cw, ccw, alternate, random); noise (`noiseAmount` ו `noiseScale` בייחוס, שדה משותף כך ששכנים זורמים יחד); scatter (`spread`, נקודת התפזרות אישית שמושגת באמצע הדרך; עם `scatterHold` מעל 0 העיגול יוצא אליה, נח בה לאורך החלק הזה מהתעופה, ונכנס ליעד); gather (איסוף לנקודת המוקד ופיזור ממנה, עם `gatherShrink`).
+- **path:** straight; arc (`curvature`, ו `direction`: cw, ccw, alternate, random); noise (`noiseAmount` ו `noiseScale` בייחוס, שדה משותף כך ששכנים זורמים יחד); scatter (`spread`, נקודת התפזרות אישית שמושגת באמצע הדרך; עם `scatterHold` מעל 0 העיגול יוצא אליה, מרחף לאורך החלק הזה מהתעופה וממשיך להתרחק לאט מ 75% מהרדיוס עד הרדיוס המלא, כך שאין פריים בלי תנועה, ונכנס ליעד); gather (איסוף לנקודת המוקד ופיזור ממנה, עם `gatherShrink`).
 - **order:** none, x, y, distance (מנקודת המוקד, שנבחרת בלחיצה קצרה על המסך), radius, color, random. המפתח מנורמל לפי דירוג, כך שה `stagger` מתפזר באחידות. `reverse` הופך את הכיוון.
 - **leftovers** (עודפים ב A): shrink, exit (מחוץ למסגרת בכיוון `angle`), merge (לעיגול הקרוב ב B, בצבע שלו).
 - **spawns** (חוסרים ב B): grow, split (מהעיגול הקרוב ב A, בצבע שלו), edges (מקצה המסגרת, לאורך הקו מהמרכז), direction (נכנסים מחוץ למסגרת בכיוון `angle`, למשל 90 מלמעלה למטה).
