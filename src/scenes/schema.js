@@ -100,23 +100,25 @@ export const maskByModes = ['alpha', 'luminance'];
 export const collisionRadiusModes = ['base', 'pulsed'];
 
 // סגנון מעבר בין שתי סצנות (src/transitions). הכול פרמטרים, בלי מיקומים.
+// ברירת המחדל: התפזרות לענן שמחזיק לאורך רוב הגלילה, בגל מהמרכז החוצה.
 export const defaultTransitionStyle = {
   matching: { mode: 'hilbert', seed: 1 }, // hilbert, nearest, brightness, size, random
   path: {
-    mode: 'straight', // straight, arc, noise, scatter, gather
+    mode: 'scatter', // straight, arc, noise, scatter, gather
     curvature: 0.35, // arc: הסטת נקודת הביקורת, ביחס לאורך המסלול
     direction: 'cw', // arc: cw, ccw, alternate, random
     noiseAmount: 120, // noise: עוצמה בפיקסלי ייחוס
     noiseScale: 0.004, // noise: סקאלת השדה
     spread: 260, // scatter: רדיוס ההתפזרות בפיקסלי ייחוס
+    scatterHold: 0.6, // scatter: החלק מהתעופה שבו העיגול נח בנקודת הפיזור (0 = עקומה שעוברת בה לרגע)
     gatherShrink: 0.4, // gather: קנה הרדיוס בנקודת האיסוף
   },
-  order: { mode: 'none', stagger: 0.4, reverse: false, seed: 1 }, // none, x, y, distance, radius, color, random
+  order: { mode: 'distance', stagger: 0.2, reverse: false, seed: 1 }, // none, x, y, distance, radius, color, random
   focus: [0.5, 0.5], // נקודה במסגרת (0 עד 1): ל order=distance ול path=gather
   leftovers: { mode: 'shrink', angle: -90 }, // עודפים ב A: shrink, exit (בכיוון angle), merge
   spawns: { mode: 'grow', angle: 90 }, // חוסרים ב B: grow, split, edges, direction (נכנסים בכיוון angle)
-  ease: 'power2.inOut', // easing של GSAP, לכל עיגול
-  overlay: { dip: 1, sharpness: 1 }, // שכבת העל (תנועה, התנגשויות) בזמן תעופה: 1 - dip * sin(πu)^sharpness
+  ease: 'power1.inOut', // easing של GSAP, לכל עיגול
+  overlay: { dip: 0.65, sharpness: 3.6 }, // שכבת העל (תנועה, התנגשויות) בזמן תעופה: 1 - dip * sin(πu)^sharpness
   duration: 2.5, // שניות, לניגון בעורך
 };
 

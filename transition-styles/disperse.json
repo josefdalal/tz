@@ -12,6 +12,7 @@
     "noiseAmount": 120,
     "noiseScale": 0.004,
     "spread": 320,
+    "scatterHold": 0,
     "gatherShrink": 0.4
   },
   "order": {

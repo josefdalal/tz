@@ -106,6 +106,8 @@ export function evaluateAt(t, prep, ends, style, ev, focus, unit, p) {
   const nScale = path.noiseScale / (unit || 1);
   const spread = path.spread * unit;
   const shrink = path.gatherShrink;
+  const hold = Math.min(0.9, Math.max(0, path.scatterHold ?? 0));
+  const half = (1 - hold) / 2;
   const dip = style.overlay.dip;
   const sharp = Math.max(0.05, style.overlay.sharpness);
   const { ease, noise } = ev;
@@ -122,7 +124,25 @@ export function evaluateAt(t, prep, ends, style, ev, focus, unit, p) {
     let x;
     let y;
     let rScale = 1;
-    if (mode === 'arc' || mode === 'scatter') {
+    if (mode === 'scatter' && hold > 0) {
+      // התפזרות עם החזקה: יציאה לנקודת הפיזור, מנוחה בה לאורך hold מהתעופה, וכניסה ליעד
+      const a = rnd[s * 2] * Math.PI * 2;
+      const d = spread * Math.sqrt(rnd[s * 2 + 1]);
+      const sx = (ax + bx) / 2 + Math.cos(a) * d;
+      const sy = (ay + by) / 2 + Math.sin(a) * d;
+      if (u < half) {
+        const q = smooth(u / half);
+        x = ax + (sx - ax) * q;
+        y = ay + (sy - ay) * q;
+      } else if (u > 1 - half) {
+        const q = smooth((u - (1 - half)) / half);
+        x = sx + (bx - sx) * q;
+        y = sy + (by - sy) * q;
+      } else {
+        x = sx;
+        y = sy;
+      }
+    } else if (mode === 'arc' || mode === 'scatter') {
       let cx;
       let cy;
       const mx = (ax + bx) / 2;
@@ -177,6 +197,11 @@ export function evaluateAt(t, prep, ends, style, ev, focus, unit, p) {
     colorU[s] = uc;
     overlayW[s] = 1 - dip * Math.pow(bump, sharp);
   }
+}
+
+/** smoothstep בתוך 0 עד 1; מחוץ לטווח (easing שחורג, כמו back) לינארי. */
+function smooth(q) {
+  return q <= 0 || q >= 1 ? q : q * q * (3 - 2 * q);
 }
 
 /** checksum של המצב הטהור (לבדיקת הפיכות): FNV על הביטים של המערכים. */

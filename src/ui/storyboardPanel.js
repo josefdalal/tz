@@ -57,6 +57,7 @@ function toWorking(data) {
 function serialize(sb) {
   return {
     playback: sb.playback,
+    style: sb.style,
     steps: sb.steps.map((s) => ({ ...clone(s), text: textEmpty(s.text) ? null : clone(s.text) })),
   };
 }

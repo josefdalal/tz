@@ -318,6 +318,7 @@ export function createGui(scene, stats, hooks) {
   fPath.add(ts.path, 'noiseAmount', 0, 600, 1).name('noise: עוצמה').onChange(restyle);
   fPath.add(ts.path, 'noiseScale', 0.0005, 0.02, 0.0005).name('noise: סקאלה').onChange(restyle);
   fPath.add(ts.path, 'spread', 0, 1200, 1).name('התפזרות: רדיוס').onChange(restyle);
+  fPath.add(ts.path, 'scatterHold', 0, 0.9, 0.01).name('התפזרות: החזקה').onChange(restyle);
   fPath.add(ts.path, 'gatherShrink', 0, 1, 0.01).name('איסוף: קנה רדיוס').onChange(restyle);
 
   const fOrder = fTr.addFolder('סדר');
