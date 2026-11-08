@@ -5,30 +5,50 @@
   "steps": [
     {
       "id": "s2",
-      "scene": "intro",
-      "hold": 800,
+      "scene": "עיגול",
+      "hold": 400,
       "transition": null,
       "text": {
         "title": "יוסף דלאל",
-        "body": "רק לחלום ידעתי ",
+        "body": "רק לחלום ידעתי ...\nמחשבות על פירוק והרכבה מחדש.\n",
         "link": {
           "text": "",
           "href": ""
-        }
+        },
+        "x": 0.82,
+        "y": 0.85
       }
     },
     {
       "id": "s3",
       "scene": "intro_B",
-      "hold": 800,
+      "hold": 400,
       "transition": null,
       "text": {
         "title": "ינשוף",
-        "body": "איפה יושב הטקסט",
+        "body": "איפה יושב הטקסט????",
         "link": {
           "text": "המאגר",
           "href": "https://github.com/"
-        }
+        },
+        "x": 0.82,
+        "y": 0.85
+      }
+    },
+    {
+      "id": "s4",
+      "scene": "MASHROM",
+      "hold": 400,
+      "transition": null,
+      "text": {
+        "title": "תפטיר",
+        "body": "מה אם יכולנו ללבוש אורגניזם ולחשו דרכו את העולם? \nתרגיל מסכם במעבדה ספקולטיבית.\n PART 1",
+        "link": {
+          "text": "קישור לסרטון",
+          "href": ""
+        },
+        "x": 0.82,
+        "y": 0.85
       }
     }
   ]

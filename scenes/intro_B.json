@@ -103,5 +103,8 @@
       0.7
     ]
   },
-  "baked": null
+  "baked": {
+    "file": "intro_B.tzb",
+    "count": 20900
+  }
 }

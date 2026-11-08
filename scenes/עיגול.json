@@ -1,0 +1,110 @@
+{
+  "version": 3,
+  "type": "scene",
+  "id": "עיגול",
+  "seed": 6804,
+  "maxCount": 20400,
+  "frame": {
+    "reference": "16:9"
+  },
+  "layouts": {
+    "landscape": {
+      "x": 0.5,
+      "y": 0.5,
+      "rotation": 0,
+      "scale": 1,
+      "flipX": false,
+      "flipY": false
+    },
+    "portrait": null
+  },
+  "shape": {
+    "type": "image",
+    "d": "M0 0 L400 0 L400 400 L0 400 Z",
+    "fillRule": "nonzero",
+    "src": "local/21-10-26AArtboard-1B.png",
+    "image": {
+      "maskBy": "luminance",
+      "threshold": 0.5,
+      "invert": false,
+      "sizeAmount": 1,
+      "sizeInvert": false,
+      "colorMix": 0
+    },
+    "x": 0.5,
+    "y": 0.5,
+    "rotation": 0,
+    "scale": 0.6,
+    "flipX": false,
+    "flipY": false,
+    "fit": "center"
+  },
+  "radius": {
+    "min": 0.5,
+    "max": 1.7,
+    "sizeMode": "edgeDistance",
+    "gap": 0.4,
+    "noiseScale": 0.0175
+  },
+  "palette": {
+    "space": "oklch",
+    "stops": [
+      "#6b6b6b",
+      "#000000",
+      "#d6d6d6"
+    ],
+    "mapBy": "random",
+    "background": "#ffffff"
+  },
+  "motion": {
+    "speed": 1.81,
+    "pulse": {
+      "amount": 22,
+      "speed": 0.8
+    },
+    "wander": {
+      "range": 14.5,
+      "speed": 0.23
+    },
+    "coherence": 0.21,
+    "fieldScale": 0.004,
+    "colorShift": 0.1
+  },
+  "physics": {
+    "spring": {
+      "frequency": 3.15,
+      "damping": 0.83
+    },
+    "substeps": 1,
+    "collisions": {
+      "enabled": false,
+      "strength": 1,
+      "iterations": 2,
+      "radius": "base"
+    },
+    "mouse": {
+      "enabled": true,
+      "radius": 194,
+      "strength": 0.12
+    }
+  },
+  "enter": {
+    "mode": "fromCenter"
+  },
+  "exit": {
+    "mode": "disperse",
+    "strength": 1
+  },
+  "render": {
+    "mode": "flat",
+    "lightDir": [
+      -0.4,
+      -0.6,
+      0.7
+    ]
+  },
+  "baked": {
+    "file": "עיגול.tzb",
+    "count": 18976
+  }
+}
