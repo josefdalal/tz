@@ -1,0 +1,110 @@
+{
+  "version": 3,
+  "type": "scene",
+  "id": "BLACK_SUN",
+  "seed": 9999,
+  "maxCount": 30000,
+  "frame": {
+    "reference": "16:9"
+  },
+  "layouts": {
+    "landscape": {
+      "x": 0.5,
+      "y": 0.5,
+      "rotation": 0,
+      "scale": 1,
+      "flipX": false,
+      "flipY": false
+    },
+    "portrait": null
+  },
+  "shape": {
+    "type": "image",
+    "d": "M0 0 L400 0 L400 400 L0 400 Z",
+    "fillRule": "nonzero",
+    "src": "local/21-10-26FArtboard-2B.png",
+    "image": {
+      "maskBy": "luminance",
+      "threshold": 0.25,
+      "invert": false,
+      "sizeAmount": 0.33,
+      "sizeInvert": false,
+      "colorMix": 0.83
+    },
+    "x": 0.5,
+    "y": 0.5,
+    "rotation": 0,
+    "scale": 0.6,
+    "flipX": false,
+    "flipY": false,
+    "fit": "center"
+  },
+  "radius": {
+    "min": 0.5,
+    "max": 6.3,
+    "sizeMode": "edgeDistance",
+    "gap": 0,
+    "noiseScale": 0.001
+  },
+  "palette": {
+    "space": "oklch",
+    "stops": [
+      "#6b6b6b",
+      "#000000",
+      "#d6d6d6"
+    ],
+    "mapBy": "radius",
+    "background": "#ffffff"
+  },
+  "motion": {
+    "speed": 0.69,
+    "pulse": {
+      "amount": 25,
+      "speed": 1.83
+    },
+    "wander": {
+      "range": 9.6,
+      "speed": 0.56
+    },
+    "coherence": 0.44,
+    "fieldScale": 0.011,
+    "colorShift": 0.1
+  },
+  "physics": {
+    "spring": {
+      "frequency": 2,
+      "damping": 1
+    },
+    "substeps": 2,
+    "collisions": {
+      "enabled": false,
+      "strength": 1,
+      "iterations": 2,
+      "radius": "base"
+    },
+    "mouse": {
+      "enabled": true,
+      "radius": 80,
+      "strength": 1
+    }
+  },
+  "enter": {
+    "mode": "fromCenter"
+  },
+  "exit": {
+    "mode": "disperse",
+    "strength": 1
+  },
+  "render": {
+    "mode": "flat",
+    "lightDir": [
+      -0.4,
+      -0.6,
+      0.7
+    ]
+  },
+  "baked": {
+    "file": "BLACK_SUN.tzb",
+    "count": 30000
+  }
+}
