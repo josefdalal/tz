@@ -161,10 +161,25 @@ export function viewAt(tl, loc) {
   return { a, b: a, data: tl.solo, t: 0 };
 }
 
+/** שקיפות הכניסה של טקסט הצעד, px פיקסלים מתחילת העצירה שלו: 0 לאורך text.delay, ואז עולה לאורך text.fade. */
+function entryOpacity(step, px) {
+  const t = step?.text;
+  const delay = t?.delay ?? 0;
+  if (!(delay > 0)) return 1;
+  const fade = t.fade ?? 0;
+  if (!(fade > 0)) return px >= delay ? 1 : 0;
+  return Math.min(Math.max((px - delay) / fade, 0), 1);
+}
+
 /**
- * שקיפות הטקסט: מלא בעצירה. במעבר fade out עד האמצע, שם הטקסט מתחלף (activeStep),
- * ו fade in של הטקסט הבא עד הסוף.
+ * שקיפות הטקסט. בעצירה: מלא, או אחרי השהיה ו fade in כשלצעד יש text.delay.
+ * במעבר: fade out עד האמצע, שם הטקסט מתחלף (activeStep), ו fade in של הטקסט הבא עד הסוף.
+ * לצעד הבא עם השהיה אין fade in במעבר: הטקסט שלו נכנס רק בעצירה. פונקציה של המיקום בלבד, ולכן הפיכה.
  */
-export function textOpacity(loc) {
-  return loc.phase === 'transition' ? Math.abs(1 - 2 * loc.local) : 1;
+export function textOpacity(tl, loc) {
+  const s = tl.steps[loc.step];
+  if (!s) return 1;
+  if (loc.phase === 'hold') return entryOpacity(s, loc.local * s.hold);
+  if (loc.local < 0.5) return (1 - 2 * loc.local) * entryOpacity(s, s.hold);
+  return (2 * loc.local - 1) * entryOpacity(tl.steps[loc.step + 1], 0);
 }

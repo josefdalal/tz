@@ -111,7 +111,7 @@ async function main() {
       runner.setSides({ scene: scenes[v.a], geom: geoms[v.a] }, { scene: scenes[v.b], geom: geoms[v.b] }, v.data, v.t);
     }
 
-    text.show(sb.steps[activeStep(loc)].text, textOpacity(loc));
+    text.show(sb.steps[activeStep(loc)].text, textOpacity(tl, loc));
     return runner.frame(v.t);
   });
 

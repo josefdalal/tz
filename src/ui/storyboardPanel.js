@@ -172,6 +172,9 @@ export function createStoryboardPanel(gui, hooks) {
         f.add(t, 'x', -0.2, 1.2, 0.001).name('מיקום טקסט x').onChange(() => changed(false)),
         f.add(t, 'y', -0.2, 1.2, 0.001).name('מיקום טקסט y').onChange(() => changed(false)),
       ]);
+      // כניסת הטקסט בתוך העצירה: השהיה ואז fade in, בפיקסלי גלילה
+      f.add(t, 'delay', 0, 3000, 10).name('השהיית טקסט px').onChange(() => changed(true));
+      f.add(t, 'fade', 0, 2000, 10).name('fade in טקסט px').onChange(() => changed(true));
 
       f.add({ go: () => moveStep(i, -1) }, 'go').name('הזזה למעלה').enable(i > 0);
       f.add({ go: () => moveStep(i, 1) }, 'go').name('הזזה למטה').enable(i < sb.steps.length - 1);
@@ -267,7 +270,7 @@ export function createStoryboardPanel(gui, hooks) {
     const act = activeStep(loc);
     const s = sb.steps[act];
     shownStep = act;
-    shownOpacity = textOpacity(loc);
+    shownOpacity = textOpacity(tl, loc);
     showText();
     pv.info = `${act + 1} (${s.id}) · ${loc.phase === 'hold' ? 'עצירה' : 'מעבר'} ${loc.local.toFixed(2)}${s.text.title ? ` · ${s.text.title}` : ''}`;
     await tr.show(v.a, v.b, v.data, v.t);

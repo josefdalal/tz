@@ -137,7 +137,9 @@ export const defaultTransition = { from: '', to: '', scroll: defaultScroll, ...d
 // בלוק הטקסט של צעד, במבנה הסופי של docs/text-layer.md. כל שדה אופציונלי.
 // x ו y: מרכז התיבה, 0 עד 1 על פני האזור הבטוח (ייחוס 16:9), כמו מיקום של צורה.
 // בשלב 6 יתווספו לאותו אובייקט רוחב, יישור, פריסת portrait ונקודות כניסה ויציאה.
-export const defaultStepText = { title: '', body: '', link: { text: '', href: '' }, x: 0.82, y: 0.85 };
+// delay: פיקסלי גלילה מתחילת העצירה שבהם הטקסט עוד לא מופיע (0 = מלא מתחילת העצירה).
+// fade: אורך העלייה שלו אחרי ההשהיה, בפיקסלי גלילה (0 = מופיע בבת אחת). ראה textOpacity ב timeline.js.
+export const defaultStepText = { title: '', body: '', link: { text: '', href: '' }, x: 0.82, y: 0.85, delay: 0, fade: 200 };
 
 export const defaultStep = {
   id: '', // מזהה יציב לצעד, לא תלוי במיקום ברשימה
